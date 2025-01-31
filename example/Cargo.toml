@@ -1,6 +1,6 @@
 [package]
 name = "example"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [features]
@@ -13,7 +13,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 serde_yaml = "0.9"
 anyhow = "1.0"
-log = "0.4.25"
+log = "0.4"
 
 
 [dev-dependencies]
