@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = [
+    "assert_tv",
+    "assert_tv_macros",
+    "example",
+]

@@ -1,0 +1,21 @@
+[package]
+name = "example"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["record"]
+record = []
+
+[dependencies]
+assert_tv = { path = "../assert_tv" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+serde_yaml = "0.9"
+anyhow = "1.0"
+log = "0.4.25"
+
+
+[dev-dependencies]
+assert_tv = {  path = "../assert_tv" , features = ["enabled"] }
+assert_tv_macros = { path = "../assert_tv_macros" }
