@@ -1,36 +1,19 @@
 use assert_tv::{tv_checked_intermediate, tv_intermediate};
 
 fn main() {
-    // tv_record!(
-    //     test,
-    //     let x = { 1 },
-    //     let x = { 2 }
-    // );
-
-
-
-
-    // load_test_vector!(
-    //     test,
-    //     let x = { 1 },
-    //     let y = { 2 },
-    // )
     let r = c1(1, 2);
     println!("{:?}", r)
 
 }
 
 fn c1(x1: i32, x2: i32) -> i32 {
-    let m = tv_checked_intermediate!(test, x1*4, "m", "Some intermediate value");
+    let m = tv_checked_intermediate!( x1*4);
     return m + x2;
 }
 
-
-
-
 #[cfg(test)]
 mod tests {
-    use assert_tv::{finalize_tv_case, initialize_tv_case_from_file, TestMode, TestVectorFileFormat, tv_const, tv_output};
+    use assert_tv::{finalize_tv_case, initialize_tv_case_from_file, TestMode, TestVectorFileFormat, tv_const, tv_intermediate, tv_output};
     use assert_tv_macros::test_vec;
     use crate::{c1, main};
 
@@ -41,7 +24,7 @@ mod tests {
     
     #[test_vec(mode="init")]
     fn test_vector_case_2() {
-        let a = tv_const!(test, 3, "a", "a is the first input");
+        let a = tv_const!(3);
         let b = tv_const!(test, 4, "b", "b is the second input");
         let output = c1(a, b);
         tv_output!(test, output, "output", "");
@@ -55,5 +38,19 @@ mod tests {
         let output = c1(a, b);
         tv_output!(test, output, "output", "");
         finalize_tv_case().expect("Error finalizing test vector case");
+    }
+
+
+    fn add(a: i32, b: i32) -> i32 {
+        let sum = tv_intermediate!(a + b);
+        sum
+    }
+
+    #[test_vec()] // Initialize test vectors on first run
+    fn test_add() {
+        let a = tv_const!(test, 2, "A", "First input");
+        let b = tv_const!(test, 3, "B", "Second input");
+        let result = add(a, b);
+        tv_output!(test, result, "Result", "Final output");
     }
 }

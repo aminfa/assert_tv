@@ -10,8 +10,8 @@ entries:
   value: 3
   code_location: example/src/main.rs:54
 - entry_type: Intermediate
-  description: Some intermediate value
-  name: m
+  description: null
+  name: null
   value: 8
   code_location: example/src/main.rs:24
 - entry_type: Output

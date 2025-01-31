@@ -1,7 +1,7 @@
 entries:
 - entry_type: Const
-  description: a is the first input
-  name: a
+  description: null
+  name: null
   value: 3
   code_location: example/src/main.rs:44
 - entry_type: Const
