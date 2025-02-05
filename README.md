@@ -48,7 +48,14 @@ fn test_add() {
 }
 ```
 
-On first run, set the environment variable to `TEST_MODE=init`.
+The test macro `test_vec`, adds `#[test]` and `#[ignore]` attributes. 
+To run the test, it is required to set the parallelism to 1.
+Also, on first run, set the environment variable to `TEST_MODE=init`.
+
+```bash
+TEST_MODE=init cargo test -- --ignored --test-threads=1
+```
+
 In init mode running the test vector will be recorded from the runtime values and stored in your repository. 
 The name of the test vector file is derived from the function name. 
 

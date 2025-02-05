@@ -3,19 +3,19 @@ entries:
   description: a is the first input
   name: a
   value: 2
-  code_location: example/src/main.rs:53
+  code_location: example/src/main.rs:39
 - entry_type: Const
   description: b is the second input
   name: b
   value: 3
-  code_location: example/src/main.rs:54
+  code_location: example/src/main.rs:40
 - entry_type: Intermediate
   description: null
   name: null
   value: 8
-  code_location: example/src/main.rs:24
+  code_location: example/src/main.rs:10
 - entry_type: Output
   description: ''
   name: output
   value: 11
-  code_location: example/src/main.rs:56
+  code_location: example/src/main.rs:42

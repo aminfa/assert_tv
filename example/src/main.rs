@@ -13,6 +13,10 @@ fn c1(x1: i32, x2: i32) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+    use std::str::FromStr;
+    use std::thread::sleep;
+    use std::time::Duration;
     use assert_tv::{finalize_tv_case, initialize_tv_case_from_file, TestMode, TestVectorFileFormat, tv_const, tv_intermediate, tv_output};
     use assert_tv_macros::test_vec;
     use crate::{c1, main};
@@ -46,11 +50,12 @@ mod tests {
         sum
     }
 
-    #[test_vec()] // Initialize test vectors on first run
+    #[test_vec(mode = "init")] // Initialize test vectors on first run
     fn test_add() {
-        let a = tv_const!(test, 2, "A", "First input");
+        let a = tv_const!(test, 3, "A", "First input");
         let b = tv_const!(test, 3, "B", "Second input");
         let result = add(a, b);
         tv_output!(test, result, "Result", "Final output");
     }
+
 }

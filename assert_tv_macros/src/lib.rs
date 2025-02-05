@@ -144,6 +144,7 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
     // let file_format_quoted = quote! {file_format};
     let expanded = quote! {
         #[test]
+        #[ignore = "Test Vector based tests are ignored by default. Run with `cargo test -- --ignored --test-threads=1"]
         fn #fn_name() {
             let _guard = assert_tv::initialize_tv_case_from_file(#file_path, #file_format_quoted, #test_mode)
                 .expect("Error initializing test vector case");;
