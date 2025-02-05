@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "entry_type": "Const",
+      "description": "First input",
+      "name": "A",
+      "value": 3,
+      "code_location": "example/src/main.rs:55"
+    },
+    {
+      "entry_type": "Const",
+      "description": "Second input",
+      "name": "B",
+      "value": 3,
+      "code_location": "example/src/main.rs:56"
+    },
+    {
+      "entry_type": "Intermediate",
+      "description": null,
+      "name": null,
+      "value": 6,
+      "code_location": "example/src/main.rs:49"
+    },
+    {
+      "entry_type": "Output",
+      "description": "Final output",
+      "name": "Result",
+      "value": 6,
+      "code_location": "example/src/main.rs:58"
+    }
+  ]
+}

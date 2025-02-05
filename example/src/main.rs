@@ -50,7 +50,7 @@ mod tests {
         sum
     }
 
-    #[test_vec(mode = "init")] // Initialize test vectors on first run
+    #[test_vec(mode = "init", format = "json")] // Initialize test vectors on first run
     fn test_add() {
         let a = tv_const!(test, 3, "A", "First input");
         let b = tv_const!(test, 3, "B", "Second input");

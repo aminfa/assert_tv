@@ -119,7 +119,7 @@ impl TestVectorData {
             .map_err(|e| anyhow::anyhow!("Failed to create test vector file: {}", e))?;
         match file_format {
             TestVectorFileFormat::Json => {
-                serde_json::to_writer(tv_file, &self)
+                serde_json::to_writer_pretty(tv_file, &self)
                     .map_err(|e| anyhow::anyhow!("Failed to write test vector file as json: {}", e))?
             },
             TestVectorFileFormat::Yaml => {
