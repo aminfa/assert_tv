@@ -92,10 +92,7 @@ impl TestVecEnv {
 impl TestVectorData {
     fn load_from_file<T: Into<PathBuf>>(tv_file_path: T, file_format: TestVectorFileFormat) -> anyhow::Result<Self> {
         let tv_file_path = tv_file_path.into();
-        if let Some(parent) = tv_file_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| anyhow::anyhow!("Failed to create parent directories for test vector file ({:?}): {}", tv_file_path, e))?;
-        }
+        
         let tv_file = std::fs::File::open(tv_file_path.clone())
             .map_err(|e| anyhow::anyhow!("Failed to open test vector file ({:?}): {}", tv_file_path, e))?;
         let tv_data: TestVectorData = match file_format {
@@ -113,6 +110,10 @@ impl TestVectorData {
 
     fn store_to_file<T: Into<PathBuf>>(&self, tv_file_path: T, file_format: TestVectorFileFormat) -> anyhow::Result<()> {
         let tv_file_path = tv_file_path.into();
+        if let Some(parent) = tv_file_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| anyhow::anyhow!("Failed to create parent directories for test vector file ({:?}): {}", tv_file_path, e))?;
+        }
         let tv_file = std::fs::File::create(tv_file_path)
             .map_err(|e| anyhow::anyhow!("Failed to create test vector file: {}", e))?;
         match file_format {
