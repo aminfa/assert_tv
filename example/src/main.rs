@@ -23,11 +23,12 @@ mod tests {
     }
     
     #[test_vec(mode="init")]
-    fn test_vector_case_2() {
+    fn test_vector_case_2() -> Result<(), String> {
         let a = tv_const!(3);
         let b = tv_const!(test, 4, "b", "b is the second input");
         let output = c1(a, b);
         tv_output!(test, output, "output", "");
+        Ok(())
     }
 
     #[test]

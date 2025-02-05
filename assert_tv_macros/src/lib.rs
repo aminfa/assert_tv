@@ -3,7 +3,7 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn, Expr, Lit, Meta, Token, Error};
+use syn::{parse_macro_input, ItemFn, Expr, Lit, Meta, Token, Error, ReturnType};
 use syn::punctuated::Punctuated;
 
 /// An attribute macro for simplifying the creation of test functions that utilize test vectors.
@@ -56,6 +56,11 @@ use syn::punctuated::Punctuated;
 pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
     let input = parse_macro_input!(item as ItemFn);
+    let fn_result = &input.sig.output;
+    // let returns_result = match input.sig.output {
+    //     ReturnType::Default => {}
+    //     ReturnType::Type(_, _) => {}
+    // }
     let fn_name = &input.sig.ident;
     let fn_block = &input.block;
 
@@ -155,12 +160,13 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #[test]
         #[ignore = "Test Vector based tests are ignored by default. Run with `cargo test -- --ignored --test-threads=1"]
-        fn #fn_name() {
+        fn #fn_name() #fn_result {
             let _guard = assert_tv::initialize_tv_case_from_file(#file_path, #file_format_quoted, #test_mode)
-                .expect("Error initializing test vector case");;
-            #fn_block
+                .expect("Error initializing test vector case");
+            let result = #fn_block;
             assert_tv::finalize_tv_case().expect("Error finalizing test vector case");
-            drop(_guard)
+            drop(_guard);
+            result
         }
     };
 
