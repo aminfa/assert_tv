@@ -3,6 +3,7 @@ use crate::{TestMode, TestVectorFileFormat};
 
 pub struct TestVectorEntryType;
 
+#[allow(unused_variables)]
 pub fn initialize_tv_case_from_file<T: Into<PathBuf>>(tv_file_path: T,
                                                       file_format: TestVectorFileFormat,
                                                       test_mode: TestMode)
@@ -15,6 +16,7 @@ pub fn finalize_tv_case() -> anyhow::Result<()> {
     unimplemented!()
 }
 
+#[allow(unused_variables)]
 pub fn process_next_entry<V>(
     entry_type: TestVectorEntryType,
     description: Option<String>,

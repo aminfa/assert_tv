@@ -1,4 +1,4 @@
-use assert_tv::{tv_checked_intermediate, tv_intermediate};
+use assert_tv::{tv_checked_intermediate};
 
 fn main() {
     let r = c1(1, 2);
@@ -13,10 +13,6 @@ fn c1(x1: i32, x2: i32) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
-    use std::str::FromStr;
-    use std::thread::sleep;
-    use std::time::Duration;
     use assert_tv::{finalize_tv_case, initialize_tv_case_from_file, TestMode, TestVectorFileFormat, tv_const, tv_intermediate, tv_output};
     use assert_tv_macros::test_vec;
     use crate::{c1, main};

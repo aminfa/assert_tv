@@ -3,45 +3,55 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn, Expr, Lit, Meta, Token, ExprLit, Error};
+use syn::{parse_macro_input, ItemFn, Expr, Lit, Meta, Token, Error};
 use syn::punctuated::Punctuated;
-// #[proc_macro_attribute]
-// pub fn tv_test(attr: TokenStream, item: TokenStream) -> TokenStream {
-//     let test_vector = parse_macro_input!(attr as Expr);
-//
-//     let input_fn = parse_macro_input!(item as ItemFn);
-//     let fn_vis = input_fn.vis;
-//     let fn_name = input_fn.sig.ident;
-//     let fn_block = input_fn.block;
-//     let fn_inputs = input_fn.sig.inputs;
-//
-//     if fn_inputs.len() != 1 {
-//         panic!("Function must have exactly one parameter");
-//     }
-//
-//     let impl_fn_name = syn::Ident::new(
-//         &format!("{}_test_impl", fn_name),
-//         fn_name.span()
-//     );
-//
-//     let expanded = quote! {
-//         // Original function (renamed)
-//         #fn_vis fn #impl_fn_name(#fn_inputs) {
-//             #fn_block
-//         }
-//
-//         #[test]
-//         #fn_vis fn #fn_name() {
-//             let test_cases = #test_vector;
-//             for input in test_cases {
-//                 #impl_fn_name(input);
-//             }
-//         }
-//     };
-//
-//     TokenStream::from(expanded)
-// }
 
+/// An attribute macro for simplifying the creation of test functions that utilize test vectors.
+///
+/// This macro allows you to write data-driven tests using external test vectors stored in YAML or JSON files.
+/// It provides flexibility by supporting different modes of operation: initializing, checking, and recording test cases.
+/// 
+/// # Usage
+///
+/// The `test_vec` macro is applied as an attribute to test functions. Here's a basic example:
+///
+/// ```rust
+/// use assert_tv_macros::test_vec;
+/// #[test_vec]
+/// fn my_test() {
+///     // Test code here
+/// }
+/// ```
+///
+/// ## Arguments
+///
+/// The `test_vec` macro accepts the following arguments:
+///
+/// 1. **`file`**: Specifies the path to the test vector file.
+///    - Format: `"path/to/file.{yaml|json}"`
+///    - Example: `#[test_vec(file = "tests/vecs/my_test.yaml")]`
+///    - Default: None (uses a default based on function name and format)
+///
+/// 2. **`format`**: Determines the format of the test vector file.
+///    - Possible values:
+///      - `"yaml"` or `"yml"`
+///      - `"json"`
+///    - Default: `"yaml"`
+///    - Example: `#[test_vec(format = "json")]`
+///
+/// 3. **`mode`**: Specifies the test mode.
+///    - Possible values:
+///      - `"init"`
+///      - `"check"`
+///      - `"record"`
+///    - Default: If `TEST_MODE` env-variable is defined, it will be used. Else `"check"` is used as the default.
+///    - Example: `#[test_vec(mode = "debug")]`
+/// 
+/// # Notes
+///
+/// - The generated default file path for test vectors is `.test_vectors/<function_name>.<format>`.
+/// - Test functions wrapped with this macro are marked as `#[ignore]` by default. To include them in test runs, use the `--ignored` flag.
+/// - The macro automatically initializes and cleans up test vector resources, ensuring proper setup and teardown.
 #[proc_macro_attribute]
 pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
