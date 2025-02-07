@@ -79,7 +79,7 @@ macro_rules! process_tv_observation {
             #[allow(unused_braces)]
             {
                 $generator
-            }
+            }.pop()
         }
     }
 }
