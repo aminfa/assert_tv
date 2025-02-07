@@ -229,7 +229,7 @@ pub fn finalize_tv_case() -> anyhow::Result<()> {
     })
 }
 
-pub fn process_next_entry<V: WrappedVal>(
+pub fn process_next_entry<V: TestVectorValue>(
     entry_type: TestVectorEntryType,
     description: Option<String>,
     name: Option<String>,
@@ -337,7 +337,7 @@ pub fn process_next_entry<V: WrappedVal>(
     
 }
 
-pub trait WrappedVal {
+pub trait TestVectorValue {
     type Original;
 
     fn serialize(&self) -> anyhow::Result<serde_json::Value>;
@@ -347,7 +347,7 @@ pub trait WrappedVal {
     fn pop(self) -> Self::Original;
 }
 
-impl<T> WrappedVal for T
+impl<T> TestVectorValue for T
 where
     T: Serialize + DeserializeOwned,
 {

@@ -16,5 +16,5 @@ anyhow = "1.0"
 
 
 [dev-dependencies]
-assert_tv = {  path = "../assert_tv" , features = ["enabled", "tls"] }
+assert_tv = {  path = "../assert_tv" , default-features = false, features = ["enabled"] }
 assert_tv_macros = { path = "../assert_tv_macros" }

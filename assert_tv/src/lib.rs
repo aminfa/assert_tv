@@ -8,7 +8,7 @@ pub use test_vec_impl::{
     initialize_tv_case_from_file,
     process_next_entry,
     TestVectorEntryType,
-    WrappedVal
+    TestVectorValue
 };
 
 
@@ -20,7 +20,7 @@ pub use test_vec_no_impl::{
     initialize_tv_case_from_file,
     process_next_entry,
     TestVectorEntryType,
-    WrappedVal
+    TestVectorValue
 };
 
 
@@ -78,7 +78,7 @@ macro_rules! process_tv_observation {
             #[cfg(not($cfg_option))]
             #[allow(unused_braces)]
             {
-                $crate::WrappedVal::pop($generator)
+                $crate::TestVectorValue::pop($generator)
             }
         }
     }

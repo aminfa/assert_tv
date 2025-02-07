@@ -29,7 +29,7 @@ pub fn process_next_entry<V>(
     // Ok(observed_value)
 }
 
-pub trait WrappedVal {
+pub trait TestVectorValue {
     type Original;
 
     fn serialize(&self) -> anyhow::Result<()>;
@@ -39,7 +39,7 @@ pub trait WrappedVal {
     fn pop(self) -> Self::Original;
 }
 
-impl<T> WrappedVal for T
+impl<T> TestVectorValue for T
 {
     type Original = Self;
 
