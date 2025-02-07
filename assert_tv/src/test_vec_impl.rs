@@ -184,7 +184,7 @@ pub fn finalize_tv_case() -> anyhow::Result<()> {
     })
 }
 
-pub fn process_next_entry<V: Serialize + DeserializeOwned + 'static>(
+pub fn process_next_entry<V: Serialize + DeserializeOwned>(
     entry_type: TestVectorEntryType,
     description: Option<String>,
     name: Option<String>,
