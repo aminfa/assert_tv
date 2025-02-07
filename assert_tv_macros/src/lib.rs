@@ -18,7 +18,7 @@ use syn::punctuated::Punctuated;
 ///
 /// ```rust
 /// use assert_tv_macros::test_vec;
-/// #[test_vec]
+/// #[test_vec(feature="tv")]
 /// fn my_test() {
 ///     // Test code here
 /// }
@@ -70,7 +70,7 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut file_format_quoted = quote! {assert_tv::TestVectorFileFormat::Yaml};
     let mut test_mode = quote! { assert_tv::TestMode::from_environment() };
     let mut feature_flag: Option<String> = None;
-    
+
     // Process attribute arguments
     for meta in args {
         match meta {
@@ -176,8 +176,8 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
             default_file
         }
     };
-    
-    
+
+
 
     // let file_path_quoted = quote! {file_path};
     // let file_format_quoted = quote! {file_format};

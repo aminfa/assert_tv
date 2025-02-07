@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use crate::{TestMode, TestVectorFileFormat};
 
 pub struct TestVectorEntryType;
@@ -32,22 +34,24 @@ pub fn process_next_entry<V>(
 pub trait TestVectorValue {
     type Original;
 
-    fn serialize(&self) -> anyhow::Result<()>;
+    fn serialize(&self) -> anyhow::Result<serde_json::Value>;
 
-    fn deserialize(value: &()) -> anyhow::Result<()>;
+    fn deserialize(value: &serde_json::Value) -> anyhow::Result<Self::Original>;
 
     fn pop(self) -> Self::Original;
 }
 
-impl<T> TestVectorValue for T
+impl<T> crate::TestVectorValue for T
+where
+    T: Serialize + DeserializeOwned,
 {
     type Original = Self;
 
-    fn serialize(&self) -> anyhow::Result<()> {
+    fn serialize(&self) -> anyhow::Result<serde_json::Value> {
         unimplemented!()
     }
 
-    fn deserialize(value: &()) -> anyhow::Result<()> {
+    fn deserialize(value: &serde_json::Value) -> anyhow::Result<Self::Original> {
         unimplemented!()
     }
 
