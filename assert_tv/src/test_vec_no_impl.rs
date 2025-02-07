@@ -52,6 +52,6 @@ impl<T> WrappedVal for T
     }
 
     fn pop(self) -> Self::Original {
-        unimplemented!()
+        self
     }
 }

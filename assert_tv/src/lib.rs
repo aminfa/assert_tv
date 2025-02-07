@@ -78,8 +78,8 @@ macro_rules! process_tv_observation {
             #[cfg(not($cfg_option))]
             #[allow(unused_braces)]
             {
-                $generator
-            }.pop()
+                $crate::WrappedVal::pop($generator)
+            }
         }
     }
 }
@@ -135,16 +135,6 @@ macro_rules! tv_intermediate {
         $crate::process_tv_observation!($cfg_option, $generator, $crate::TestVectorEntryType::Intermediate, None, None, false, )
     };
 
-    // Version without cfg, and description
-    ($generator:expr, $name:expr) => {
-        $crate::tv_intermediate!(test, $generator, $name)
-    };
-
-    // Version without cfg, name and description
-    ($generator:expr) => {
-        $crate::tv_intermediate!(test, $generator)
-    };
-
 }
 
 
@@ -166,16 +156,6 @@ macro_rules! tv_checked_intermediate {
     // Version without name and description
     ($cfg_option:meta, $generator:expr) => {
         $crate::process_tv_observation!($cfg_option, $generator, $crate::TestVectorEntryType::Intermediate, None, None, true, )
-    };
-
-    // Version without cfg, and description
-    ($generator:expr, $name:expr) => {
-        $crate::tv_checked_intermediate!(test, $generator, $name)
-    };
-
-    // Version without cfg, name and description
-    ($generator:expr) => {
-        $crate::tv_checked_intermediate!(test, $generator)
     };
 
 }
@@ -201,14 +181,5 @@ macro_rules! tv_output {
         $crate::process_tv_observation!($cfg_option, $generator, $crate::TestVectorEntryType::Output, None, None, false, )
     };
 
-    // Version without cfg, and description
-    ($generator:expr, $name:expr) => {
-        $crate::tv_output!(test, $generator, $name)
-    };
-
-    // Version without cfg, name and description
-    ($generator:expr) => {
-        $crate::tv_output!(test, $generator)
-    };
 }
 

@@ -5,8 +5,9 @@ edition = "2021"
 authors = ["Amin Faez <faez@utilacy.de>"]
 
 [features]
-default = []
+default = ["tls"]
 enabled = ["serde", "serde_yaml", "serde_json", "log"]
+tls = []
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"], optional = true }

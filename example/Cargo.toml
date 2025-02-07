@@ -4,8 +4,8 @@ version = "0.2.2"
 edition = "2021"
 
 [features]
-default = ["record"]
-record = []
+default = []
+tv = []
 
 [dependencies]
 assert_tv = { path = "../assert_tv" }
@@ -16,5 +16,5 @@ anyhow = "1.0"
 
 
 [dev-dependencies]
-assert_tv = {  path = "../assert_tv" , features = ["enabled"] }
+assert_tv = {  path = "../assert_tv" , features = ["enabled", "tls"] }
 assert_tv_macros = { path = "../assert_tv_macros" }

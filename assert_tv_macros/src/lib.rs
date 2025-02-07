@@ -2,6 +2,7 @@
 
 extern crate proc_macro;
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use quote::quote;
 use syn::{parse_macro_input, ItemFn, Expr, Lit, Meta, Token, Error, ReturnType};
 use syn::punctuated::Punctuated;
@@ -68,6 +69,8 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut file_format: assert_tv::TestVectorFileFormat = assert_tv::TestVectorFileFormat::Yaml;
     let mut file_format_quoted = quote! {assert_tv::TestVectorFileFormat::Yaml};
     let mut test_mode = quote! { assert_tv::TestMode::from_environment() };
+    let mut feature_flag: Option<String> = None;
+    
     // Process attribute arguments
     for meta in args {
         match meta {
@@ -135,6 +138,20 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
                             .to_compile_error()
                             .into();
                     }
+                } else if ident == "feature" {
+                    // NEW: Parse the `feature` argument.
+                    if let Expr::Lit(lit_expr) = nv.value {
+                        let Lit::Str(v) = lit_expr.lit else {
+                            return Error::new_spanned(lit_expr, "expected string literal for feature")
+                                .to_compile_error()
+                                .into();
+                        };
+                        feature_flag = Some(v.value());
+                    } else {
+                        return Error::new_spanned(nv.value, "expected string literal for feature")
+                            .to_compile_error()
+                            .into();
+                    }
                 }
             }
             _ => return Error::new_spanned(meta, "unsupported attribute format")
@@ -142,6 +159,11 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .into(),
         }
     }
+    let Some(feature_flag) = feature_flag else {
+        return Error::new(Span::call_site(), "expected a feature flag, e.g. `feature = \"tv\"`")
+            .to_compile_error()
+            .into();
+    };
     let file_path: String = match file_path {
         Some(file_path) => file_path,
         None => {
@@ -154,12 +176,14 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
             default_file
         }
     };
+    
+    
 
     // let file_path_quoted = quote! {file_path};
     // let file_format_quoted = quote! {file_format};
     let expanded = quote! {
+        #[cfg(feature=#feature_flag)]
         #[test]
-        #[ignore = "Test Vector based tests are ignored by default. Run with `cargo test -- --ignored --test-threads=1"]
         fn #fn_name() #fn_result {
             let _guard = assert_tv::initialize_tv_case_from_file(#file_path, #file_format_quoted, #test_mode)
                 .expect("Error initializing test vector case");

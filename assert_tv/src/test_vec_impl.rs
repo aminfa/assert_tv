@@ -1,5 +1,4 @@
 use std::env;
-use std::marker::PhantomData;
 use std::path::{PathBuf};
 use std::str::FromStr;
 use std::sync::{Mutex, OnceLock};
@@ -7,6 +6,7 @@ use anyhow::{anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use crate::{TestMode, TestVectorFileFormat};
+use crate::test_vec_impl::storage::TlsEnvGuard;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct TestVectorEntry {
@@ -38,56 +38,104 @@ struct TestVecEnv {
     test_mode: TestMode
 }
 
-struct TestVecEnvSingleton(
-    OnceLock<Mutex<Option<TestVecEnv>>>
-);
+#[cfg(not(feature = "tls"))]
+mod storage {
+    use std::marker::PhantomData;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
 
-static TEST_VEC_ENV: TestVecEnvSingleton = TestVecEnvSingleton(OnceLock::new());
+    struct TestVecEnvSingleton(
+        OnceLock<Mutex<Option<crate::test_vec_impl::TestVecEnv>>>
+    );
 
-// thread_local! {
-//     static TEST_VEC_ENV: RefCell<Option<TestVecEnv>> = RefCell::new(None);
-// }
+    static TEST_VEC_ENV: TestVecEnvSingleton = TestVecEnvSingleton(OnceLock::new());
+    // because it is a global env that all threads write to, we need a lock
+    static GLOBAL_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    pub struct TlsEnvGuard {
+        // Prevents Send implementation to ensure the guard is dropped in the same thread.
+        _marker: PhantomData<*const ()>,
+        single_threaded_lock: Option<MutexGuard<'static, ()>>
+    }
 
 
-pub struct TlsEnvGuard {
-    // Prevents Send implementation to ensure the guard is dropped in the same thread.
-    _marker: PhantomData<*const ()>,
-}
+    impl Drop for TlsEnvGuard {
+        fn drop(&mut self) {
+            drop(self.single_threaded_lock.take());
+            let mut test_vec_env_lock = crate::test_vec_impl::TestVecEnv::get_global().lock().expect("Global poisoned");
+            test_vec_env_lock.take();
+        }
+    }
 
+    impl crate::test_vec_impl::TestVecEnv {
+        pub(super)  fn get_global() -> &'static Mutex<Option<crate::test_vec_impl::TestVecEnv>> {
+            TEST_VEC_ENV.0.get_or_init(|| Mutex::new(None))
+        }
 
-impl Drop for TlsEnvGuard {
-    fn drop(&mut self) {
-        let mut test_vec_env_lock = TestVecEnv::get_global().lock().expect("Global poisoned");
-        test_vec_env_lock.take();
+        pub(super) fn initialize_with(self) -> anyhow::Result<TlsEnvGuard> {
+            let mut test_vec_env_lock = crate::test_vec_impl::TestVecEnv::get_global().lock().expect("Global poisoned");
+            test_vec_env_lock.replace(self);
+            let global_lock_guard = GLOBAL_ENV_LOCK.lock().expect("Global env lock poisoned");
+            Ok(crate::test_vec_impl::TlsEnvGuard {
+                single_threaded_lock: Some(global_lock_guard),
+                _marker: PhantomData,
+            })
+        }
+
+        pub(super) fn with_global<F, R>(f: F) -> anyhow::Result<R>
+        where F: FnOnce(&mut crate::test_vec_impl::TestVecEnv) -> anyhow::Result<R>
+        {
+            let mut test_vec_env_lock = crate::test_vec_impl::TestVecEnv::get_global().lock().expect("Global poisoned");
+            f(test_vec_env_lock.as_mut().ok_or_else(|| anyhow::anyhow!("TestEnv not initialized."))?)
+        }
     }
 }
 
+#[cfg(feature = "tls")]
+mod storage {
+    use std::cell::RefCell;
+    use std::marker::PhantomData;
+    use crate::test_vec_impl::TestVecEnv;
 
-
-// fn get_global_tv_env() -> &'static Mutex<Option<TestVecEnv>> {
-//     TEST_VEC_ENV.with(|env| Mutex::new(None))
-// }
-
-impl TestVecEnv {
-    fn get_global() -> &'static Mutex<Option<TestVecEnv>> {
-        TEST_VEC_ENV.0.get_or_init(|| Mutex::new(None))
+    thread_local! {
+        static TEST_VEC_ENV: RefCell<Option<TestVecEnv>> = RefCell::new(None);
     }
-    
-    fn initialize_with(self) -> anyhow::Result<TlsEnvGuard> {
-        let mut test_vec_env_lock = TestVecEnv::get_global().lock().expect("Global poisoned");
-        test_vec_env_lock.replace(self);
-        Ok(crate::test_vec_impl::TlsEnvGuard {
-            _marker: PhantomData,
-        })
+
+    pub struct TlsEnvGuard {
+        // Prevents Send implementation to ensure the guard is dropped in the same thread.
+        _marker: PhantomData<*const ()>,
     }
-    
-    fn with_global<F, R>(f: F) -> anyhow::Result<R>
-    where F: FnOnce(&mut TestVecEnv) -> anyhow::Result<R>
-    {
-        let mut test_vec_env_lock = TestVecEnv::get_global().lock().expect("Global poisoned");
-        f(test_vec_env_lock.as_mut().ok_or_else(|| anyhow::anyhow!("TestEnv not initialized."))?)
+
+
+    impl Drop for TlsEnvGuard {
+        fn drop(&mut self) {
+            TEST_VEC_ENV.with(|tls| {
+                tls.replace(None);
+            });
+        }
+    }
+
+    impl TestVecEnv {
+        pub(super) fn initialize_with(self) -> anyhow::Result<TlsEnvGuard> {
+            TEST_VEC_ENV.with(|tv_env_cell| {
+                tv_env_cell.replace(Some(self))
+            });
+            Ok(TlsEnvGuard {
+                _marker: PhantomData,
+            })
+        }
+
+        pub(super) fn with_global<F, R>(f: F) -> anyhow::Result<R>
+        where F: FnOnce(&mut TestVecEnv) -> anyhow::Result<R>
+        {
+            TEST_VEC_ENV.with(|tv_env_cell| {
+                let mut tv_env_borrowed = tv_env_cell.borrow_mut();
+                let tv_env: &mut TestVecEnv = tv_env_borrowed.as_mut().ok_or_else(|| anyhow::anyhow!("TestEnv not initialized."))?;
+                f(tv_env)
+            })
+        }
     }
 }
+
 
 impl TestVectorData {
     fn load_from_file<T: Into<PathBuf>>(tv_file_path: T, file_format: TestVectorFileFormat) -> anyhow::Result<Self> {
@@ -136,10 +184,7 @@ pub fn initialize_tv_case_from_file<T: Into<PathBuf>>(
     file_format: TestVectorFileFormat,
     test_mode: TestMode
 ) -> anyhow::Result<TlsEnvGuard> {
-    if !is_single_threaded_test() {
-        panic!("Error: Vector-based tests require a single-threaded environment. \
-        Run the test with `--test-threads=1` or `RUST_TEST_THREADS`.")
-    }
+
     let tv_file_path: PathBuf = tv_file_path.into();
     let loaded_tv_data = match test_mode {
         TestMode::Init => {
@@ -191,14 +236,8 @@ pub fn process_next_entry<V: WrappedVal>(
     observed_value: V,
     code_location: Option<String>,
     check_intermediate: bool) -> anyhow::Result<V::Original> {
-
-    // The implementation needs access to globals and requires the tests to be isolated from each other
-    if !is_single_threaded_test() {
-        return Ok(observed_value.pop())
-    }
-    
     let value = observed_value.serialize()?;
-    
+
     let observed_entry = TestVectorEntry {
         entry_type,
         description,
@@ -296,36 +335,6 @@ pub fn process_next_entry<V: WrappedVal>(
         }
     })
     
-}
-
-
-fn is_single_threaded_test() -> bool {
-    // check if RUST_TEST_THREADS is set to 1
-    if let Ok(Ok(num_threads)) = env::var("RUST_TEST_THREADS").map(|t| u32::from_str(&t)) {
-        if num_threads == 1 {
-            return true
-        } else {
-            return false
-        }
-    }
-    // parse `--test-threads` from args
-    // hand both way of setting the option: `--test-threads=1` or `--test-threads 1`
-    let args: Vec<String> = env::args().collect();
-    let mut test_threads: Option<&str> = None;
-    let mut i = 0;
-    while i < args.len() {
-        if args[i] == "--test-threads" && i + 1 < args.len() {
-            test_threads = Some(&args[i + 1]);
-            i += 1;
-        } else if args[i].starts_with("--test-threads=") {
-            let parts: Vec<&str> = args[i].splitn(2, '=').collect();
-            if parts.len() == 2 {
-                test_threads = Some(parts[1]);
-            }
-        }
-        i += 1;
-    }
-    test_threads == Some("1")
 }
 
 pub trait WrappedVal {
