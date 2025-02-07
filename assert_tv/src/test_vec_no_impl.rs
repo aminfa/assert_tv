@@ -28,3 +28,30 @@ pub fn process_next_entry<V>(
     unimplemented!()
     // Ok(observed_value)
 }
+
+pub trait WrappedVal {
+    type Original;
+
+    fn serialize(&self) -> anyhow::Result<()>;
+
+    fn deserialize(value: &()) -> anyhow::Result<()>;
+
+    fn pop(self) -> Self::Original;
+}
+
+impl<T> WrappedVal for T
+{
+    type Original = Self;
+
+    fn serialize(&self) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+
+    fn deserialize(value: &()) -> anyhow::Result<()> {
+        unimplemented!()
+    }
+
+    fn pop(self) -> Self::Original {
+        unimplemented!()
+    }
+}

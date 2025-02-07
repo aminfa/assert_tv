@@ -184,24 +184,26 @@ pub fn finalize_tv_case() -> anyhow::Result<()> {
     })
 }
 
-pub fn process_next_entry<V: Serialize + DeserializeOwned>(
+pub fn process_next_entry<V: WrappedVal>(
     entry_type: TestVectorEntryType,
     description: Option<String>,
     name: Option<String>,
     observed_value: V,
     code_location: Option<String>,
-    check_intermediate: bool) -> anyhow::Result<V> {
+    check_intermediate: bool) -> anyhow::Result<V::Original> {
 
     // The implementation needs access to globals and requires the tests to be isolated from each other
     if !is_single_threaded_test() {
-        return Ok(observed_value)
+        return Ok(observed_value.pop())
     }
-
+    
+    let value = observed_value.serialize()?;
+    
     let observed_entry = TestVectorEntry {
         entry_type,
         description,
         name,
-        value: serde_json::to_value(&observed_value).expect("Error serializing test vector value."),
+        value,
         code_location,
     };
 
@@ -215,7 +217,7 @@ pub fn process_next_entry<V: Serialize + DeserializeOwned>(
             TestMode::Init => {
                 // init mode ignores (doesn't check) all entries (passes it through)
                 // return the value that was observed
-                Ok(observed_value)
+                Ok(observed_value.pop())
             }
             TestMode::Record => {
                 // Simply check if type is matching
@@ -232,7 +234,7 @@ pub fn process_next_entry<V: Serialize + DeserializeOwned>(
                     }
                 }
                 // if the type matches, we override and return the observed value
-                Ok(observed_value)
+                Ok(observed_value.pop())
             }
             TestMode::Check => {
                 match (observed_entry.entry_type, check_intermediate) {
@@ -254,7 +256,7 @@ pub fn process_next_entry<V: Serialize + DeserializeOwned>(
                                 observed_entry
                             )
                         }
-                        Ok(observed_value)
+                        Ok(observed_value.pop())
                     }
                     (TestVectorEntryType::Intermediate, false) => {
                         // intermediate values are by default not checked (unless the check_intermediate is set to true)
@@ -267,8 +269,7 @@ pub fn process_next_entry<V: Serialize + DeserializeOwned>(
                         if loaded_entry.entry_type != observed_entry.entry_type {
                             bail!("Observed value does not match the loaded test vectors type: \n   loaded: {:?}\n observed: {:?}", loaded_entry.entry_type, observed_entry.entry_type)
                         }
-                        serde_json::from_value(loaded_entry.value.clone())
-                            .map_err(|e| anyhow!("Error deserializing loaded test vector value: {:?}. Error: {}", loaded_entry, e))
+                        V::deserialize(&loaded_entry.value)
                     }
                     (TestVectorEntryType::Intermediate, true)
                     | (TestVectorEntryType::Output, _) => {
@@ -283,9 +284,7 @@ pub fn process_next_entry<V: Serialize + DeserializeOwned>(
                             if loaded_entry.entry_type != observed_entry.entry_type {
                                 bail!("Observed value does not match the loaded test vectors type: \n   loaded: {:?}\n observed: {:?}", loaded_entry.entry_type, observed_entry.entry_type)
                             }
-                            
-                            serde_json::from_value(loaded_entry.value.clone())
-                                .map_err(|e| anyhow!("Error deserializing loaded test vector value: {:?}. Error: {}", loaded_entry, e))
+                            V::deserialize(&loaded_entry.value)
                         } else {
                             bail!("Observed value does not exist in loaded test vector: \n observed: {:?}",
                                    observed_entry
@@ -327,4 +326,36 @@ fn is_single_threaded_test() -> bool {
         i += 1;
     }
     test_threads == Some("1")
+}
+
+pub trait WrappedVal {
+    type Original;
+
+    fn serialize(&self) -> anyhow::Result<serde_json::Value>;
+
+    fn deserialize(value: &serde_json::Value) -> anyhow::Result<Self::Original>;
+
+    fn pop(self) -> Self::Original;
+}
+
+impl<T> WrappedVal for T
+where
+    T: Serialize + DeserializeOwned,
+{
+    type Original = Self;
+
+    fn serialize(&self) -> anyhow::Result<serde_json::Value> {
+        // Convert the value to a serde_json::Value, mapping errors using anyhow.
+        serde_json::to_value(self).map_err(anyhow::Error::new)
+    }
+
+    fn deserialize(value: &serde_json::Value) -> anyhow::Result<Self::Original> {
+        // We clone the value because from_value takes ownership.
+        serde_json::from_value(value.clone()).map_err(anyhow::Error::new)
+    }
+
+    fn pop(self) -> Self::Original {
+        // Simply return self, since Original is Self.
+        self
+    }
 }

@@ -7,7 +7,8 @@ pub use test_vec_impl::{
     finalize_tv_case,
     initialize_tv_case_from_file,
     process_next_entry,
-    TestVectorEntryType
+    TestVectorEntryType,
+    WrappedVal
 };
 
 
@@ -18,7 +19,8 @@ pub use test_vec_no_impl::{
     finalize_tv_case,
     initialize_tv_case_from_file,
     process_next_entry,
-    TestVectorEntryType
+    TestVectorEntryType,
+    WrappedVal
 };
 
 
