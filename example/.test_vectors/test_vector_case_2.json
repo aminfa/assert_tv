@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "entry_type": "Const",
+      "description": null,
+      "name": null,
+      "value": 3,
+      "code_location": "assert_tv/src/test_vec_impl.rs:319"
+    },
+    {
+      "entry_type": "Const",
+      "description": "b is the second input",
+      "name": "b",
+      "value": 4,
+      "code_location": "assert_tv/src/test_vec_impl.rs:319"
+    },
+    {
+      "entry_type": "Const",
+      "description": "intermediate value m",
+      "name": "m",
+      "value": 15,
+      "code_location": "assert_tv/src/test_vec_impl.rs:319"
+    },
+    {
+      "entry_type": "Output",
+      "description": "",
+      "name": "output",
+      "value": 11,
+      "code_location": "example/src/main.rs:29"
+    }
+  ]
+}

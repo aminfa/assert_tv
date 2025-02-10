@@ -1,11 +1,8 @@
-use std::env;
 use std::path::{PathBuf};
-use std::str::FromStr;
-use std::sync::{Mutex, OnceLock};
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
-use crate::{TestMode, TestVectorFileFormat};
+use crate::{TestMode, TestVectorFileFormat, TestVectorMomento};
 use crate::test_vec_impl::storage::TlsEnvGuard;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
@@ -19,9 +16,7 @@ pub struct TestVectorEntry {
 
 #[derive(Serialize, Deserialize, Debug, Copy, Eq, PartialEq, Clone)]
 pub enum TestVectorEntryType {
-    // Input,
     Const,
-    Intermediate,
     Output
 }
 
@@ -190,7 +185,6 @@ pub fn initialize_tv_case_from_file<T: Into<PathBuf>>(
         TestMode::Init => {
             TestVectorData { entries: Vec::new() }
         }
-        TestMode::Record |
         TestMode::Check => {
             TestVectorData::load_from_file(&tv_file_path, file_format)
                 .map_err(|_| anyhow!("Error loading test vector. You may need to switch to init mode"))?
@@ -212,32 +206,27 @@ pub fn finalize_tv_case() -> anyhow::Result<()> {
             TestMode::Check => {
                 // In check mode, test vectors are not updated
             }
-            TestMode::Init |
-            TestMode::Record => {
-                // In both init and record mode, the test vector file is update if necessary
+            TestMode::Init => {
+                // In both init mode, the test vector file is update if necessary
                 let update_required =
                     tv_env.loaded_tv_data != tv_env.recorded_tv_data ||  // Test vectors have changed
                         !tv_env.tv_file_path.is_file();     // OR test vector file does not exist
-
                 if update_required {
                     tv_env.recorded_tv_data.store_to_file(&tv_env.tv_file_path, tv_env.file_format)?;
                 }
-
             }
         }
         Ok(())
     })
 }
 
-pub fn process_next_entry<V: TestVectorValue>(
+pub fn process_next_entry<V: TestVectorMomento>(
     entry_type: TestVectorEntryType,
     description: Option<String>,
     name: Option<String>,
-    observed_value: V,
-    code_location: Option<String>,
-    check_intermediate: bool) -> anyhow::Result<V::Original> {
-    let value = observed_value.serialize()?;
-
+    observed_value: &V::Originator,
+    code_location: Option<String>) -> anyhow::Result<Option<V::Originator>> {
+    let value = V::serialize(observed_value)?;
     let observed_entry = TestVectorEntry {
         entry_type,
         description,
@@ -254,117 +243,198 @@ pub fn process_next_entry<V: TestVectorValue>(
         );
         match tv_env.test_mode {
             TestMode::Init => {
-                // init mode ignores (doesn't check) all entries (passes it through)
-                // return the value that was observed
-                Ok(observed_value.pop())
-            }
-            TestMode::Record => {
-                // Simply check if type is matching
-                // As long as the type and name matches, we allow overriding
-                if let Some(loaded_entry) = loaded_entry {
-                    let matches = loaded_entry.entry_type == observed_entry.entry_type &&
-                        loaded_entry.name == observed_entry.name;
-                    if !matches {
-                        bail!("Observed value does not have the same type or name as the one that was loaded. \
-                        In record mode we require that all loaded entries have types and names that match the ones that are loaded. \
-                        A mismatch can happen, if the order of operations changes or new entries are added. \
-                        If the test vector case changes are substantial, use the 'init' mode instead of the 'record' mode.\
-                        ")
+                // init mode ignores (doesn't check) all entries (passes it through to be stored)
+                // Entry types of type const are however deserialized and returned anyway
+                // This is done to have exact same behaviour as check mode, where consts are loaded and replaced
+                match observed_entry.entry_type {
+                    TestVectorEntryType::Const => {
+                        Ok(Some(V::deserialize(&observed_entry.value)
+                            .with_context(|| "Failed to deserialize constant value right after serializing it. \
+                        There probably is a bug in the TestVectorMomento implementation")?))
+                    }
+                    TestVectorEntryType::Output => {
+                        // Nothing will be outputted if the entry type is output (as there is nothing to be replaced
+                        Ok(None)
                     }
                 }
-                // if the type matches, we override and return the observed value
-                Ok(observed_value.pop())
             }
             TestMode::Check => {
-                match (observed_entry.entry_type, check_intermediate) {
-                    // (TestVectorEntryType::Input, _) => {
-                    //     // input values are ignored
-                    // }
-                    (TestVectorEntryType::Const, _) => {
-                        if let Some(loaded_entry) = loaded_entry {
-                            if loaded_entry.value != observed_entry.value {
-                                log::warn!("Observed constant value \
-                                does not equal the loaded value from the test vector. \n\
-                                Loaded Entry: {:?}\n\
-                                Observed Entry: {:?}",
-                                    loaded_entry, observed_entry
-                                )
-                            }
-                        } else {
-                            log::warn!("Observed constant value does not exist in loaded test vector: \n observed: {:?}",
-                                observed_entry
-                            )
-                        }
-                        Ok(observed_value.pop())
-                    }
-                    (TestVectorEntryType::Intermediate, false) => {
-                        // intermediate values are by default not checked (unless the check_intermediate is set to true)
-                        let Some(loaded_entry) = loaded_entry else {
-                            bail!("Intermediate value was not loaded (reached end of the list)")
-                        };
+                let Some(loaded_entry) = loaded_entry else {
+                    bail!("Observed value does not exist in loaded test vector: \n observed: {:?}", observed_entry)
+                };
+                let diff = || format!(
+                    "\n\
+                                     loaded name: {:?}\n\
+                                   observed name: {:?}\n\
+                                    loaded value: {:?}\n\
+                                  observed value: {:?}\n\
+                                    loaded entry_type: {:?}\n\
+                                  observed entry_type: {:?}\n",
+                    loaded_entry.name, observed_entry.name,
+                    loaded_entry.value, observed_entry.value,
+                    loaded_entry.entry_type, observed_entry.entry_type
+                );
+                // check entry types
+                match observed_entry.entry_type {
+                    TestVectorEntryType::Const |
+                    TestVectorEntryType::Output => {
+
                         if loaded_entry.name != observed_entry.name {
-                            bail!("Observed value does not match the loaded test vectors name: \n   loaded: {:?}\n observed: {:?}", loaded_entry.name, observed_entry.name)
+                            bail!("Observed value does not match the loaded test vectors name:{}", diff())
                         }
                         if loaded_entry.entry_type != observed_entry.entry_type {
-                            bail!("Observed value does not match the loaded test vectors type: \n   loaded: {:?}\n observed: {:?}", loaded_entry.entry_type, observed_entry.entry_type)
-                        }
-                        V::deserialize(&loaded_entry.value)
-                    }
-                    (TestVectorEntryType::Intermediate, true)
-                    | (TestVectorEntryType::Output, _) => {
-                        if let Some(loaded_entry) = loaded_entry {
-                           
-                            if loaded_entry.name != observed_entry.name {
-                                bail!("Observed value does not match the loaded test vectors name: \n   loaded: {:?}\n observed: {:?}", loaded_entry.name, observed_entry.name)
-                            }
-                            if loaded_entry.value != observed_entry.value {
-                                bail!("Observed value does not match the loaded test vectors value: \n   loaded: {:?}\n observed: {:?}", loaded_entry.value, observed_entry.value)
-                            }
-                            if loaded_entry.entry_type != observed_entry.entry_type {
-                                bail!("Observed value does not match the loaded test vectors type: \n   loaded: {:?}\n observed: {:?}", loaded_entry.entry_type, observed_entry.entry_type)
-                            }
-                            V::deserialize(&loaded_entry.value)
-                        } else {
-                            bail!("Observed value does not exist in loaded test vector: \n observed: {:?}",
-                                   observed_entry
-                            )
+                            bail!("Observed value does not match the loaded test vectors type:{}", diff())
                         }
                     }
                 }
+
+                // check the value if it is output
+                match loaded_entry.entry_type {
+                    TestVectorEntryType::Const => {}
+                    TestVectorEntryType::Output => {
+                        if loaded_entry.value != observed_entry.value {
+                            bail!("Observed value does not match the loaded test vectors value:{}", diff())
+                        }
+                    }
+                };
+
+                // Deserialize const values
+                match loaded_entry.entry_type {
+                    TestVectorEntryType::Const => {
+                        V::deserialize(&loaded_entry.value).map(|v| Some(v))
+                    }
+                    TestVectorEntryType::Output => {
+                        Ok(None)
+                    }
+                }
+
             }
         }
     })
-    
 }
 
-pub trait TestVectorValue {
-    type Original;
 
-    fn serialize(&self) -> anyhow::Result<serde_json::Value>;
-
-    fn deserialize(value: &serde_json::Value) -> anyhow::Result<Self::Original>;
-
-    fn pop(self) -> Self::Original;
+// Define helper functions so that the compiler can infer the momento type.
+pub fn helper_infer_const<T: crate::TestVectorMomento<Originator = T>>(observed: T, name: Option<String>, description: Option<String>) -> T {
+    crate::process_tv_observation_const!(observed, T, name, description, )
+}
+pub fn helper_infer_output<T: crate::TestVectorMomento<Originator = T>>(observed: T, name: Option<String>, description: Option<String>) {
+    crate::process_tv_observation_output!(observed, T, name, description, )
 }
 
-impl<T> TestVectorValue for T
-where
-    T: Serialize + DeserializeOwned,
-{
-    type Original = Self;
-
-    fn serialize(&self) -> anyhow::Result<serde_json::Value> {
-        // Convert the value to a serde_json::Value, mapping errors using anyhow.
-        serde_json::to_value(self).map_err(anyhow::Error::new)
+#[macro_export]
+macro_rules! process_tv_observation_const {
+    (
+        $observed_value:expr,
+        $momento_type:ty,
+        $name: expr,
+        $description:expr,
+    ) => {
+        {
+            #[allow(unused_braces)]
+            {
+                let value = &$observed_value;
+                $crate::process_next_entry::<$momento_type>(
+                    $crate::TestVectorEntryType::Const,
+                    $description,
+                    $name,
+                    value,
+                    Some(format!("{}:{}", file!(), line!())),
+                )
+                    .expect("Error processing observed test vector value")
+                    .expect("Unexpected error processing observed test vector const: no value was loaded")
+            }
+        }
     }
+}
 
-    fn deserialize(value: &serde_json::Value) -> anyhow::Result<Self::Original> {
-        // We clone the value because from_value takes ownership.
-        serde_json::from_value(value.clone()).map_err(anyhow::Error::new)
+#[macro_export]
+macro_rules! process_tv_observation_output {
+    (
+        $observed_value:expr,
+        $momento_type:ty,
+        $name: expr,
+        $description:expr,
+    ) => {
+        {
+            #[allow(unused_braces)]
+            {
+                let value = &$observed_value;
+                $crate::process_next_entry::<$momento_type>(
+                    $crate::TestVectorEntryType::Output,
+                    $description,
+                    $name,
+                    value,
+                    Some(format!("{}:{}", file!(), line!())),
+                )
+                    .expect("Error processing observed test vector value");
+            }
+        }
     }
+}
 
-    fn pop(self) -> Self::Original {
-        // Simply return self, since Original is Self.
-        self
-    }
+#[macro_export]
+macro_rules! tv_const {
+    (
+        $observed_value:expr,
+        $momento_type:ty,
+        $name: expr,
+        $description:expr
+    ) => {
+        $crate::process_tv_observation_const!($observed_value, $momento_type, Some($name.into()), Some($description.into()), )
+    };
+    // Version without description
+    ($observed_value:expr, $momento_type:ty, $name:expr) => {
+        $crate::process_tv_observation_const!($observed_value, $momento_type, Some($name.into()), None, )
+    };
+    // Version without name and description
+    ($observed_value:expr, $momento_type:ty) => {
+        $crate::process_tv_observation_const!($observed_value, $momento_type, None, None, )
+    };
+    // Version without momento_type
+    // 3-argument version: we want to infer the type of the observed value.
+    ($observed_value:expr, $name:expr, $description:expr) => {
+        $crate::helper_infer_const($observed_value, Some($name.into()), Some($description.into()))
+    };
+    // Version without description, and momento_type
+    ($observed_value:expr, $name:expr) => {
+        $crate::helper_infer_const($observed_value, Some($name.into()), None)
+    };
+    // Version without name and description, and momento_type
+    ($observed_value:expr) => {
+        $crate::helper_infer_const($observed_value, None, None)
+    };
+}
+
+#[macro_export]
+macro_rules! tv_output {
+    (
+        $observed_value:expr,
+        $momento_type:ty,
+        $name: expr,
+        $description:expr
+    ) => {
+        $crate::process_tv_observation_output!($observed_value, $momento_type, Some($name.into()), Some($description.into()), )
+    };
+    // Version without description
+    ($observed_value:expr, $momento_type:ty, $name:expr) => {
+        $crate::process_tv_observation_output!($observed_value, $momento_type, Some($name.into()), None, )
+    };
+    // Version without name and description
+    ($observed_value:expr, $momento_type:ty) => {
+        $crate::process_tv_observation_output!($observed_value, $momento_type, None, None, )
+    };
+    // Version without momento_type
+    // 3-argument version: we want to infer the type of the observed value.
+    ($observed_value:expr, $name:expr, $description:expr) => {
+        $crate::helper_infer_output($observed_value, Some($name.into()), Some($description.into()))
+    };
+    // Version without description, and momento_type
+    ($observed_value:expr, $name:expr) => {
+        $crate::helper_infer_output($observed_value, Some($name.into()), None)
+    };
+    // Version without name and description, and momento_type
+    ($observed_value:expr) => {
+        $crate::helper_infer_output($observed_value, None, None)
+    };
 }

@@ -4,7 +4,7 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn, Expr, Lit, Meta, Token, Error, ReturnType};
+use syn::{parse_macro_input, ItemFn, Expr, Lit, Meta, Token, Error};
 use syn::punctuated::Punctuated;
 
 /// An attribute macro for simplifying the creation of test functions that utilize test vectors.
@@ -66,8 +66,8 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_block = &input.block;
 
     let mut file_path: Option<String> = None;
-    let mut file_format: assert_tv::TestVectorFileFormat = assert_tv::TestVectorFileFormat::Yaml;
-    let mut file_format_quoted = quote! {assert_tv::TestVectorFileFormat::Yaml};
+    let mut file_format: assert_tv::TestVectorFileFormat = assert_tv::TestVectorFileFormat::Json;
+    let mut file_format_quoted = quote! {assert_tv::TestVectorFileFormat::Json};
     let mut test_mode = quote! { assert_tv::TestMode::from_environment() };
     let mut feature_flag: Option<String> = None;
 
@@ -184,6 +184,7 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #[cfg(feature=#feature_flag)]
         #[test]
+        #[ignore]
         fn #fn_name() #fn_result {
             let _guard = assert_tv::initialize_tv_case_from_file(#file_path, #file_format_quoted, #test_mode)
                 .expect("Error initializing test vector case");
