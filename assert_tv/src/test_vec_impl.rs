@@ -1,7 +1,6 @@
 use std::path::{PathBuf};
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
-use serde::de::DeserializeOwned;
 use crate::{TestMode, TestVectorFileFormat, TestVectorMomento};
 use crate::test_vec_impl::storage::TlsEnvGuard;
 
@@ -220,6 +219,15 @@ pub fn finalize_tv_case() -> anyhow::Result<()> {
     })
 }
 
+pub fn process_next_entry_infer_type<V: TestVectorMomento<Originator=V>>(
+    entry_type: TestVectorEntryType,
+    description: Option<String>,
+    name: Option<String>,
+    observed_value: &V::Originator,
+    code_location: Option<String>) -> anyhow::Result<Option<V::Originator>> {
+    process_next_entry::<V>(entry_type, description, name, observed_value, code_location)
+}
+
 pub fn process_next_entry<V: TestVectorMomento>(
     entry_type: TestVectorEntryType,
     description: Option<String>,
@@ -314,13 +322,6 @@ pub fn process_next_entry<V: TestVectorMomento>(
 }
 
 
-// Define helper functions so that the compiler can infer the momento type.
-pub fn helper_infer_const<T: crate::TestVectorMomento<Originator = T>>(observed: T, name: Option<String>, description: Option<String>) -> T {
-    crate::process_tv_observation_const!(observed, T, name, description, )
-}
-pub fn helper_infer_output<T: crate::TestVectorMomento<Originator = T>>(observed: T, name: Option<String>, description: Option<String>) {
-    crate::process_tv_observation_output!(observed, T, name, description, )
-}
 
 #[macro_export]
 macro_rules! process_tv_observation_const {
@@ -329,6 +330,7 @@ macro_rules! process_tv_observation_const {
         $momento_type:ty,
         $name: expr,
         $description:expr,
+        $code_location:expr,
     ) => {
         {
             #[allow(unused_braces)]
@@ -339,7 +341,7 @@ macro_rules! process_tv_observation_const {
                     $description,
                     $name,
                     value,
-                    Some(format!("{}:{}", file!(), line!())),
+                    Some($code_location),
                 )
                     .expect("Error processing observed test vector value")
                     .expect("Unexpected error processing observed test vector const: no value was loaded")
@@ -355,6 +357,7 @@ macro_rules! process_tv_observation_output {
         $momento_type:ty,
         $name: expr,
         $description:expr,
+        $code_location:expr,
     ) => {
         {
             #[allow(unused_braces)]
@@ -365,12 +368,24 @@ macro_rules! process_tv_observation_output {
                     $description,
                     $name,
                     value,
-                    Some(format!("{}:{}", file!(), line!())),
+                    Some($code_location),
                 )
                     .expect("Error processing observed test vector value");
             }
         }
     }
+}
+
+// Define helper functions so that the compiler can infer the momento type.
+pub fn helper_infer_const<T: crate::TestVectorMomento<Originator = T>>(observed: T, name: Option<String>, description: Option<String>,
+                                                                       code_location: String) -> T {
+    crate::process_tv_observation_const!(observed, T, name, description, 
+                    code_location,)
+}
+pub fn helper_infer_output<T: crate::TestVectorMomento<Originator = T>>(observed: T, name: Option<String>, description: Option<String>,
+                                                                        code_location: String) {
+    crate::process_tv_observation_output!(observed, T, name, description, 
+                    code_location,)
 }
 
 #[macro_export]
@@ -381,28 +396,28 @@ macro_rules! tv_const {
         $name: expr,
         $description:expr
     ) => {
-        $crate::process_tv_observation_const!($observed_value, $momento_type, Some($name.into()), Some($description.into()), )
+        $crate::process_tv_observation_const!($observed_value, $momento_type, Some($name.into()), Some($description.into()), format!("{}:{}", file!(), line!()), )
     };
     // Version without description
     ($observed_value:expr, $momento_type:ty, $name:expr) => {
-        $crate::process_tv_observation_const!($observed_value, $momento_type, Some($name.into()), None, )
+        $crate::process_tv_observation_const!($observed_value, $momento_type, Some($name.into()), None, format!("{}:{}", file!(), line!()), )
     };
     // Version without name and description
     ($observed_value:expr, $momento_type:ty) => {
-        $crate::process_tv_observation_const!($observed_value, $momento_type, None, None, )
+        $crate::process_tv_observation_const!($observed_value, $momento_type, None, None, format!("{}:{}", file!(), line!()), )
     };
     // Version without momento_type
     // 3-argument version: we want to infer the type of the observed value.
     ($observed_value:expr, $name:expr, $description:expr) => {
-        $crate::helper_infer_const($observed_value, Some($name.into()), Some($description.into()))
+        $crate::helper_infer_const($observed_value, Some($name.into()), Some($description.into()), format!("{}:{}", file!(), line!()))
     };
     // Version without description, and momento_type
     ($observed_value:expr, $name:expr) => {
-        $crate::helper_infer_const($observed_value, Some($name.into()), None)
+        $crate::helper_infer_const($observed_value, Some($name.into()), None, format!("{}:{}", file!(), line!()))
     };
     // Version without name and description, and momento_type
     ($observed_value:expr) => {
-        $crate::helper_infer_const($observed_value, None, None)
+        $crate::helper_infer_const($observed_value, None, None, format!("{}:{}", file!(), line!()))
     };
 }
 
@@ -414,27 +429,27 @@ macro_rules! tv_output {
         $name: expr,
         $description:expr
     ) => {
-        $crate::process_tv_observation_output!($observed_value, $momento_type, Some($name.into()), Some($description.into()), )
+        $crate::process_tv_observation_output!($observed_value, $momento_type, Some($name.into()), Some($description.into()), format!("{}:{}", file!(), line!()),)
     };
     // Version without description
     ($observed_value:expr, $momento_type:ty, $name:expr) => {
-        $crate::process_tv_observation_output!($observed_value, $momento_type, Some($name.into()), None, )
+        $crate::process_tv_observation_output!($observed_value, $momento_type, Some($name.into()), None, format!("{}:{}", file!(), line!()),)
     };
     // Version without name and description
     ($observed_value:expr, $momento_type:ty) => {
-        $crate::process_tv_observation_output!($observed_value, $momento_type, None, None, )
+        $crate::process_tv_observation_output!($observed_value, $momento_type, None, None, format!("{}:{}", file!(), line!()),)
     };
     // Version without momento_type
     // 3-argument version: we want to infer the type of the observed value.
     ($observed_value:expr, $name:expr, $description:expr) => {
-        $crate::helper_infer_output($observed_value, Some($name.into()), Some($description.into()))
+        $crate::helper_infer_output($observed_value, Some($name.into()), Some($description.into()), format!("{}:{}", file!(), line!()))
     };
     // Version without description, and momento_type
     ($observed_value:expr, $name:expr) => {
-        $crate::helper_infer_output($observed_value, Some($name.into()), None)
+        $crate::helper_infer_output($observed_value, Some($name.into()), None, format!("{}:{}", file!(), line!()))
     };
     // Version without name and description, and momento_type
     ($observed_value:expr) => {
-        $crate::helper_infer_output($observed_value, None, None)
+        $crate::helper_infer_output($observed_value, None, None, format!("{}:{}", file!(), line!()))
     };
 }

@@ -12,7 +12,7 @@ fn c1(x1: i32, x2: i32) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use assert_tv::{finalize_tv_case, initialize_tv_case_from_file, TestMode, TestVectorFileFormat, tv_const, tv_output};
+    use assert_tv::{tv_const, tv_output};
     use assert_tv_macros::test_vec;
     use crate::{c1, main};
 

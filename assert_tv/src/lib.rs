@@ -9,6 +9,7 @@ pub use test_vec_impl::{
     finalize_tv_case,
     initialize_tv_case_from_file,
     process_next_entry,
+    process_next_entry_infer_type,
     TestVectorEntryType,
     helper_infer_const,
     helper_infer_output

@@ -1,6 +1,4 @@
 use std::path::PathBuf;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use crate::{TestMode, TestVectorFileFormat};
 
 
