@@ -17,19 +17,22 @@ pub fn finalize_tv_case() -> anyhow::Result<()> {
 
 #[macro_export]
 macro_rules! tv_const {
-    (
-        $observed_value:expr
-        $(, $rest:tt)*
-    ) => {
-        // compiles into identity function
+    // When extra tokens (the metadata) are provided.
+    ($observed_value:expr, $($rest:tt)*) => {
+        $observed_value
+    };
+    // When only the observed value is provided.
+    ($observed_value:expr) => {
         $observed_value
     };
 }
 
+
 #[macro_export]
 macro_rules! tv_output {
-    (
-        $(,)*
+    (   
+        $observed_value:expr
+        $(, $rest:tt)*
     ) => {
         // compiles into nothing
     };

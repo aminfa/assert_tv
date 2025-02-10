@@ -379,12 +379,12 @@ macro_rules! process_tv_observation_output {
 // Define helper functions so that the compiler can infer the momento type.
 pub fn helper_infer_const<T: crate::TestVectorMomento<T>>(observed: T, name: Option<String>, description: Option<String>,
                                                           code_location: String) -> T {
-    crate::process_tv_observation_const!(observed, T, name, description, 
+    crate::process_tv_observation_const!(observed, T, name, description,
                     code_location,)
 }
 pub fn helper_infer_output<T: crate::TestVectorMomento<T>>(observed: T, name: Option<String>, description: Option<String>,
                                                            code_location: String) {
-    crate::process_tv_observation_output!(observed, T, name, description, 
+    crate::process_tv_observation_output!(observed, T, name, description,
                     code_location,)
 }
 
@@ -442,14 +442,14 @@ macro_rules! tv_output {
     // Version without momento_type
     // 3-argument version: we want to infer the type of the observed value.
     ($observed_value:expr, $name:expr, $description:expr) => {
-        $crate::helper_infer_output(&$observed_value, Some($name.into()), Some($description.into()), format!("{}:{}", file!(), line!()))
+        $crate::helper_infer_output($observed_value, Some($name.into()), Some($description.into()), format!("{}:{}", file!(), line!()))
     };
     // Version without description, and momento_type
     ($observed_value:expr, $name:expr) => {
-        $crate::helper_infer_output(&$observed_value, Some($name.into()), None, format!("{}:{}", file!(), line!()))
+        $crate::helper_infer_output($observed_value, Some($name.into()), None, format!("{}:{}", file!(), line!()))
     };
     // Version without name and description, and momento_type
     ($observed_value:expr) => {
-        $crate::helper_infer_output(&$observed_value, None, None, format!("{}:{}", file!(), line!()))
+        $crate::helper_infer_output($observed_value, None, None, format!("{}:{}", file!(), line!()))
     };
 }
