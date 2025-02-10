@@ -57,6 +57,13 @@ pub trait TestVectorMomento {
     fn deserialize(value: &serde_json::Value) -> anyhow::Result<Self::Originator>;
 }
 
+pub trait TestVectorMomento2<O> {
+
+    fn serialize(original_value: &O) -> anyhow::Result<serde_json::Value>;
+
+    fn deserialize(value: &serde_json::Value) -> anyhow::Result<O>;
+}
+
 impl<T> TestVectorMomento for T
 where
     T: Serialize + DeserializeOwned,
@@ -72,5 +79,4 @@ where
         // We clone the value because from_value takes ownership.
         serde_json::from_value(value.clone()).map_err(anyhow::Error::new)
     }
-
 }
