@@ -409,15 +409,15 @@ macro_rules! tv_const {
     // Version without momento_type
     // 3-argument version: we want to infer the type of the observed value.
     ($observed_value:expr, $name:expr, $description:expr) => {
-        $crate::helper_infer_const($observed_value, Some($name.into()), Some($description.into()), format!("{}:{}", file!(), line!()))
+        $crate::helper_infer_const(&$observed_value, Some($name.into()), Some($description.into()), format!("{}:{}", file!(), line!()))
     };
     // Version without description, and momento_type
     ($observed_value:expr, $name:expr) => {
-        $crate::helper_infer_const($observed_value, Some($name.into()), None, format!("{}:{}", file!(), line!()))
+        $crate::helper_infer_const(&$observed_value, Some($name.into()), None, format!("{}:{}", file!(), line!()))
     };
     // Version without name and description, and momento_type
     ($observed_value:expr) => {
-        $crate::helper_infer_const($observed_value, None, None, format!("{}:{}", file!(), line!()))
+        $crate::helper_infer_const(&$observed_value, None, None, format!("{}:{}", file!(), line!()))
     };
 }
 
@@ -442,14 +442,14 @@ macro_rules! tv_output {
     // Version without momento_type
     // 3-argument version: we want to infer the type of the observed value.
     ($observed_value:expr, $name:expr, $description:expr) => {
-        $crate::helper_infer_output($observed_value, Some($name.into()), Some($description.into()), format!("{}:{}", file!(), line!()))
+        $crate::helper_infer_output(&$observed_value, Some($name.into()), Some($description.into()), format!("{}:{}", file!(), line!()))
     };
     // Version without description, and momento_type
     ($observed_value:expr, $name:expr) => {
-        $crate::helper_infer_output($observed_value, Some($name.into()), None, format!("{}:{}", file!(), line!()))
+        $crate::helper_infer_output(&$observed_value, Some($name.into()), None, format!("{}:{}", file!(), line!()))
     };
     // Version without name and description, and momento_type
     ($observed_value:expr) => {
-        $crate::helper_infer_output($observed_value, None, None, format!("{}:{}", file!(), line!()))
+        $crate::helper_infer_output(&$observed_value, None, None, format!("{}:{}", file!(), line!()))
     };
 }
