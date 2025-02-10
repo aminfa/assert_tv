@@ -219,21 +219,21 @@ pub fn finalize_tv_case() -> anyhow::Result<()> {
     })
 }
 
-pub fn process_next_entry_infer_type<V: TestVectorMomento<Originator=V>>(
+pub fn process_next_entry_infer_type<V: TestVectorMomento<V>>(
     entry_type: TestVectorEntryType,
     description: Option<String>,
     name: Option<String>,
-    observed_value: &V::Originator,
-    code_location: Option<String>) -> anyhow::Result<Option<V::Originator>> {
-    process_next_entry::<V>(entry_type, description, name, observed_value, code_location)
+    observed_value: &V,
+    code_location: Option<String>) -> anyhow::Result<Option<V>> {
+    process_next_entry::<V, V>(entry_type, description, name, observed_value, code_location)
 }
 
-pub fn process_next_entry<V: TestVectorMomento>(
+pub fn process_next_entry<O, V: TestVectorMomento<O>>(
     entry_type: TestVectorEntryType,
     description: Option<String>,
     name: Option<String>,
-    observed_value: &V::Originator,
-    code_location: Option<String>) -> anyhow::Result<Option<V::Originator>> {
+    observed_value: &O,
+    code_location: Option<String>) -> anyhow::Result<Option<O>> {
     let value = V::serialize(observed_value)?;
     let observed_entry = TestVectorEntry {
         entry_type,
@@ -336,7 +336,7 @@ macro_rules! process_tv_observation_const {
             #[allow(unused_braces)]
             {
                 let value = &$observed_value;
-                $crate::process_next_entry::<$momento_type>(
+                $crate::process_next_entry::<_, $momento_type>(
                     $crate::TestVectorEntryType::Const,
                     $description,
                     $name,
@@ -363,7 +363,7 @@ macro_rules! process_tv_observation_output {
             #[allow(unused_braces)]
             {
                 let value = &$observed_value;
-                $crate::process_next_entry::<$momento_type>(
+                $crate::process_next_entry::<_, $momento_type>(
                     $crate::TestVectorEntryType::Output,
                     $description,
                     $name,
@@ -377,13 +377,13 @@ macro_rules! process_tv_observation_output {
 }
 
 // Define helper functions so that the compiler can infer the momento type.
-pub fn helper_infer_const<T: crate::TestVectorMomento<Originator = T>>(observed: T, name: Option<String>, description: Option<String>,
-                                                                       code_location: String) -> T {
+pub fn helper_infer_const<T: crate::TestVectorMomento<T>>(observed: T, name: Option<String>, description: Option<String>,
+                                                          code_location: String) -> T {
     crate::process_tv_observation_const!(observed, T, name, description, 
                     code_location,)
 }
-pub fn helper_infer_output<T: crate::TestVectorMomento<Originator = T>>(observed: T, name: Option<String>, description: Option<String>,
-                                                                        code_location: String) {
+pub fn helper_infer_output<T: crate::TestVectorMomento<T>>(observed: T, name: Option<String>, description: Option<String>,
+                                                           code_location: String) {
     crate::process_tv_observation_output!(observed, T, name, description, 
                     code_location,)
 }

@@ -4,7 +4,7 @@
       "entry_type": "Const",
       "description": null,
       "name": null,
-      "value": 3,
+      "value": 4,
       "code_location": "example/src/main.rs:26"
     },
     {
@@ -18,14 +18,14 @@
       "entry_type": "Const",
       "description": "intermediate value m",
       "name": "m",
-      "value": 15,
+      "value": 20,
       "code_location": "example/src/main.rs:9"
     },
     {
       "entry_type": "Output",
       "description": "",
       "name": "output",
-      "value": 11,
+      "value": 16,
       "code_location": "example/src/main.rs:29"
     }
   ]
