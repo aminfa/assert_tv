@@ -5,3 +5,14 @@ members = [
     "assert_tv_macros",
     "example",
 ]
+
+[workspace.package]
+version = "0.5.1"
+categories = ["development-tools", "development-tools::testing"]
+authors = ["Amin Faez <amin.faez.inbox@gmail.com>"]
+description = "De-randomized detereministic tests with test-vectors"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+readme="README.md"
+repository="https://github.com/aminfa/assert_tv"
+keywords=["macro", "test", "test-driven", "test-helpers", "test-vectors"]

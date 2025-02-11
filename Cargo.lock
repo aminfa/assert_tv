@@ -10,7 +10,7 @@ checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
 name = "assert_tv"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "log",
@@ -21,7 +21,7 @@ dependencies = [
 
 [[package]]
 name = "assert_tv_macros"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "assert_tv",
  "proc-macro2",
