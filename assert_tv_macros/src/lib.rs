@@ -2,7 +2,6 @@
 
 extern crate proc_macro;
 use proc_macro::TokenStream;
-use proc_macro2::Span;
 use quote::quote;
 use syn::{parse_macro_input, ItemFn, Expr, Lit, Meta, Token, Error};
 use syn::punctuated::Punctuated;
@@ -44,7 +43,6 @@ use syn::punctuated::Punctuated;
 ///    - Possible values:
 ///      - `"init"`
 ///      - `"check"`
-///      - `"record"`
 ///    - Default: If `TEST_MODE` env-variable is defined, it will be used. Else `"check"` is used as the default.
 ///    - Example: `#[test_vec(mode = "debug")]`
 /// 
@@ -58,10 +56,6 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
     let input = parse_macro_input!(item as ItemFn);
     let fn_result = &input.sig.output;
-    // let returns_result = match input.sig.output {
-    //     ReturnType::Default => {}
-    //     ReturnType::Type(_, _) => {}
-    // }
     let fn_name = &input.sig.ident;
     let fn_block = &input.block;
 
@@ -69,7 +63,6 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut file_format: assert_tv::TestVectorFileFormat = assert_tv::TestVectorFileFormat::Json;
     let mut file_format_quoted = quote! {assert_tv::TestVectorFileFormat::Json};
     let mut test_mode = quote! { assert_tv::TestMode::from_environment() };
-    let mut feature_flag: Option<String> = None;
 
     // Process attribute arguments
     for meta in args {
@@ -126,7 +119,6 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
                         test_mode = match v.value().as_str() {
                             "init" => quote! {assert_tv::TestMode::Init},
                             "check" => quote! {assert_tv::TestMode::Check},
-                            "record" => quote! {assert_tv::TestMode::Record},
                             _ => {
                                 return Error::new_spanned(lit_str, "invalid format, expected init, check or record")
                                     .to_compile_error()
@@ -138,20 +130,6 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
                             .to_compile_error()
                             .into();
                     }
-                } else if ident == "feature" {
-                    // NEW: Parse the `feature` argument.
-                    if let Expr::Lit(lit_expr) = nv.value {
-                        let Lit::Str(v) = lit_expr.lit else {
-                            return Error::new_spanned(lit_expr, "expected string literal for feature")
-                                .to_compile_error()
-                                .into();
-                        };
-                        feature_flag = Some(v.value());
-                    } else {
-                        return Error::new_spanned(nv.value, "expected string literal for feature")
-                            .to_compile_error()
-                            .into();
-                    }
                 }
             }
             _ => return Error::new_spanned(meta, "unsupported attribute format")
@@ -159,11 +137,6 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .into(),
         }
     }
-    let Some(feature_flag) = feature_flag else {
-        return Error::new(Span::call_site(), "expected a feature flag, e.g. `feature = \"tv\"`")
-            .to_compile_error()
-            .into();
-    };
     let file_path: String = match file_path {
         Some(file_path) => file_path,
         None => {
@@ -182,16 +155,16 @@ pub fn test_vec(attr: TokenStream, item: TokenStream) -> TokenStream {
     // let file_path_quoted = quote! {file_path};
     // let file_format_quoted = quote! {file_format};
     let expanded = quote! {
-        #[cfg(feature=#feature_flag)]
-        #[test]
-        #[ignore]
-        fn #fn_name() #fn_result {
-            let _guard = assert_tv::initialize_tv_case_from_file(#file_path, #file_format_quoted, #test_mode)
-                .expect("Error initializing test vector case");
-            let result = #fn_block;
-            assert_tv::finalize_tv_case().expect("Error finalizing test vector case");
-            drop(_guard);
-            result
+        assert_tv::tv_if_enabled!{
+            #[test]
+            fn #fn_name() #fn_result {
+                let _guard = assert_tv::initialize_tv_case_from_file(#file_path, #file_format_quoted, #test_mode)
+                    .expect("Error initializing test vector case");
+                let result = #fn_block;
+                assert_tv::finalize_tv_case().expect("Error finalizing test vector case");
+                drop(_guard);
+                result
+            }
         }
     };
 

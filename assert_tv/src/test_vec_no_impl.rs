@@ -37,3 +37,10 @@ macro_rules! tv_output {
         // compiles into nothing
     };
 }
+
+/// Conditional compilation depending on whether test vectors are enabled
+#[macro_export]
+#[doc(hidden)]
+macro_rules! tv_if_enabled {
+    ($($tt:tt)*) => {};
+}

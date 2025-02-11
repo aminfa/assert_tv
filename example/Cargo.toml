@@ -5,10 +5,12 @@ edition = "2021"
 
 [features]
 default = []
-tv = ["assert_tv/enabled"]
 
 [dependencies]
 assert_tv = { path = "../assert_tv" }
+rand = "0.9.0"
+anyhow = "1.0.95"
+serde_json = "1.0.138"
 
 
 [dev-dependencies]

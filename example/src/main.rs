@@ -1,4 +1,7 @@
-use assert_tv::{tv_const};
+mod basic_example;
+mod momento_example;
+
+use assert_tv::{tv_const, tv_if_enabled};
 
 fn main() {
     let r = c1(1, 2);
@@ -6,7 +9,10 @@ fn main() {
 }
 
 fn c1(x1: i32, x2: i32) -> i32 {
-    let m: i32 = tv_const!(x1*5, "m", "intermediate value m");
+    let m: i32 = x1*5;
+    tv_if_enabled!{
+        let m: i32 = tv_const!(m, "m", "intermediate value m");
+    }
     return m - x2;
 }
 
@@ -21,7 +27,7 @@ mod tests {
         main();
     }
     
-    #[test_vec(feature="tv", mode="init")]
+    #[test_vec(mode="init")]
     fn test_vector_case_2() -> Result<(), String> {
         let a = tv_const!(4);
         let b = tv_const!(4, "b", "b is the second input");

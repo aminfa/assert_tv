@@ -453,3 +453,10 @@ macro_rules! tv_output {
         $crate::helper_infer_output($observed_value, None, None, format!("{}:{}", file!(), line!()))
     };
 }
+
+#[macro_export]
+macro_rules! tv_if_enabled {
+    ($($tt:tt)*) => {
+        $($tt)*
+    };
+}

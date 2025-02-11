@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "entry_type": "Const",
+      "description": "First input",
+      "name": "A",
+      "value": 2,
+      "code_location": "example/src/basic_example.rs:39"
+    },
+    {
+      "entry_type": "Const",
+      "description": "Second input",
+      "name": "B",
+      "value": 3,
+      "code_location": "example/src/basic_example.rs:43"
+    },
+    {
+      "entry_type": "Const",
+      "description": "Random Value",
+      "name": "rand",
+      "value": -864083696,
+      "code_location": "example/src/basic_example.rs:4"
+    },
+    {
+      "entry_type": "Output",
+      "description": "Final output",
+      "name": "Result",
+      "value": -864083691,
+      "code_location": "example/src/basic_example.rs:45"
+    }
+  ]
+}
