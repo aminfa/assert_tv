@@ -16,5 +16,5 @@ proc-macro = true
 [dependencies]
 syn = { version = "2.0", features = ["full"] }
 quote = "1.0"
-assert_tv = { path = "../assert_tv", version = "0.5.1"}
+assert_tv = { path = "../assert_tv", version = "0.5.2" }
 proc-macro2 = "1.0.93"
