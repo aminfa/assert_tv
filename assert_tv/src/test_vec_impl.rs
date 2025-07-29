@@ -1,5 +1,5 @@
-use crate::test_vec_impl::storage::TlsEnvGuard;
-use crate::{TestMode, TestVectorFileFormat, TestVectorMomento};
+use std::io::{Read, Write};
+use crate::{DynDeserializer, DynSerializer, TestMode, TestVectorFileFormat, TlsEnvGuard};
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -21,119 +21,15 @@ pub enum TestVectorEntryType {
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct TestVectorData {
-    entries: Vec<TestVectorEntry>,
+    pub entries: Vec<TestVectorEntry>,
 }
 
-struct TestVecEnv {
-    tv_file_path: PathBuf,
+pub struct TestVecEnv {
+    pub(crate) tv_file_path: PathBuf,
     file_format: TestVectorFileFormat,
     loaded_tv_data: TestVectorData,
     recorded_tv_data: TestVectorData,
     test_mode: TestMode,
-}
-
-#[cfg(not(feature = "tls"))]
-pub(crate) mod storage {
-    use std::marker::PhantomData;
-    use std::sync::{Mutex, MutexGuard, OnceLock};
-
-    struct TestVecEnvSingleton(OnceLock<Mutex<Option<crate::test_vec_impl::TestVecEnv>>>);
-
-    static TEST_VEC_ENV: TestVecEnvSingleton = TestVecEnvSingleton(OnceLock::new());
-    // because it is a global env that all threads write to, we need a lock
-    static GLOBAL_ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    pub struct TlsEnvGuard {
-        // Prevents Send implementation to ensure the guard is dropped in the same thread.
-        _marker: PhantomData<*const ()>,
-        single_threaded_lock: Option<MutexGuard<'static, ()>>,
-    }
-
-    impl Drop for TlsEnvGuard {
-        fn drop(&mut self) {
-            drop(self.single_threaded_lock.take());
-            let mut test_vec_env_lock = crate::test_vec_impl::TestVecEnv::get_global()
-                .lock()
-                .expect("Global poisoned");
-            test_vec_env_lock.take();
-        }
-    }
-
-    impl crate::test_vec_impl::TestVecEnv {
-        pub(super) fn get_global() -> &'static Mutex<Option<crate::test_vec_impl::TestVecEnv>> {
-            TEST_VEC_ENV.0.get_or_init(|| Mutex::new(None))
-        }
-
-        pub(super) fn initialize_with(self) -> anyhow::Result<TlsEnvGuard> {
-            let mut test_vec_env_lock = crate::test_vec_impl::TestVecEnv::get_global()
-                .lock()
-                .expect("Global poisoned");
-            test_vec_env_lock.replace(self);
-            let global_lock_guard = GLOBAL_ENV_LOCK.lock().expect("Global env lock poisoned");
-            Ok(crate::test_vec_impl::TlsEnvGuard {
-                single_threaded_lock: Some(global_lock_guard),
-                _marker: PhantomData,
-            })
-        }
-
-        pub(super) fn with_global<F, R>(f: F) -> anyhow::Result<R>
-        where
-            F: FnOnce(&mut crate::test_vec_impl::TestVecEnv) -> anyhow::Result<R>,
-        {
-            let mut test_vec_env_lock = crate::test_vec_impl::TestVecEnv::get_global()
-                .lock()
-                .expect("Global poisoned");
-            f(test_vec_env_lock
-                .as_mut()
-                .ok_or_else(|| anyhow::anyhow!("TestEnv not initialized."))?)
-        }
-    }
-}
-
-#[cfg(feature = "tls")]
-pub(crate) mod storage {
-    use crate::test_vec_impl::TestVecEnv;
-    use std::cell::RefCell;
-    use std::marker::PhantomData;
-
-    thread_local! {
-        static TEST_VEC_ENV: RefCell<Option<TestVecEnv>> = RefCell::new(None);
-    }
-
-    pub struct TlsEnvGuard {
-        // Prevents Send implementation to ensure the guard is dropped in the same thread.
-        _marker: PhantomData<*const ()>,
-    }
-
-    impl Drop for TlsEnvGuard {
-        fn drop(&mut self) {
-            TEST_VEC_ENV.with(|tls| {
-                tls.replace(None);
-            });
-        }
-    }
-
-    impl TestVecEnv {
-        pub(super) fn initialize_with(self) -> anyhow::Result<TlsEnvGuard> {
-            TEST_VEC_ENV.with(|tv_env_cell| tv_env_cell.replace(Some(self)));
-            Ok(TlsEnvGuard {
-                _marker: PhantomData,
-            })
-        }
-
-        pub(super) fn with_global<F, R>(f: F) -> anyhow::Result<R>
-        where
-            F: FnOnce(&mut TestVecEnv) -> anyhow::Result<R>,
-        {
-            TEST_VEC_ENV.with(|tv_env_cell| {
-                let mut tv_env_borrowed = tv_env_cell.borrow_mut();
-                let tv_env: &mut TestVecEnv = tv_env_borrowed
-                    .as_mut()
-                    .ok_or_else(|| anyhow::anyhow!("TestEnv not initialized."))?;
-                f(tv_env)
-            })
-        }
-    }
 }
 
 impl TestVectorData {
@@ -143,7 +39,7 @@ impl TestVectorData {
     ) -> anyhow::Result<Self> {
         let tv_file_path = tv_file_path.into();
 
-        let tv_file = std::fs::File::open(tv_file_path.clone()).map_err(|e| {
+        let mut tv_file = std::fs::File::open(tv_file_path.clone()).map_err(|e| {
             anyhow::anyhow!(
                 "Failed to open test vector file ({:?}): {}",
                 tv_file_path,
@@ -165,6 +61,18 @@ impl TestVectorData {
                     e
                 )
             })?,
+            TestVectorFileFormat::Toml => {
+                let mut buffer: String= String::new();
+                tv_file.read_to_string(&mut buffer).map_err(|e|
+                    anyhow::anyhow!("Failed to read test vector file: {}", e))?;
+                toml::from_str(buffer.as_ref()).map_err(|e| {
+                    anyhow::anyhow!(
+                    "Failed to parse test vector file ({:?}) as toml: {}",
+                    tv_file_path,
+                    e
+                )
+                })?
+            },
         };
         Ok(tv_data)
     }
@@ -184,13 +92,19 @@ impl TestVectorData {
                 )
             })?;
         }
-        let tv_file = std::fs::File::create(tv_file_path)
+        let mut tv_file = std::fs::File::create(tv_file_path)
             .map_err(|e| anyhow::anyhow!("Failed to create test vector file: {}", e))?;
         match file_format {
             TestVectorFileFormat::Json => serde_json::to_writer_pretty(tv_file, &self)
                 .map_err(|e| anyhow::anyhow!("Failed to write test vector file as json: {}", e))?,
             TestVectorFileFormat::Yaml => serde_yaml::to_writer(tv_file, &self)
                 .map_err(|e| anyhow::anyhow!("Failed to write test vector file as yaml: {}", e))?,
+            TestVectorFileFormat::Toml => {
+                let tv_serialized: String = toml::to_string(&self)
+                    .map_err(|e| anyhow::anyhow!("Failed to serialize test vector as toml: {}", e))?;
+                tv_file.write(tv_serialized.as_bytes())
+                    .map_err(|e| anyhow::anyhow!("Failed to write test vector: {}", e))?;
+            },
         };
         Ok(())
     }
@@ -245,24 +159,16 @@ pub fn finalize_tv_case() -> anyhow::Result<()> {
     })
 }
 
-pub fn process_next_entry_infer_type<V: TestVectorMomento<V>>(
-    entry_type: TestVectorEntryType,
-    description: Option<String>,
-    name: Option<String>,
-    observed_value: &V,
-    code_location: Option<String>,
-) -> anyhow::Result<Option<V>> {
-    process_next_entry::<V, V>(entry_type, description, name, observed_value, code_location)
-}
-
-pub fn process_next_entry<O, V: TestVectorMomento<O>>(
+pub fn process_next_entry<O>(
     entry_type: TestVectorEntryType,
     description: Option<String>,
     name: Option<String>,
     observed_value: &O,
     code_location: Option<String>,
+    serializer: &DynSerializer<O>,
+    deserializer: Option<&DynDeserializer<O>>,
 ) -> anyhow::Result<Option<O>> {
-    let value = V::serialize(observed_value)?;
+    let value = serializer(observed_value)?;
     let observed_entry = TestVectorEntry {
         entry_type,
         description,
@@ -282,7 +188,8 @@ pub fn process_next_entry<O, V: TestVectorMomento<O>>(
                 // This is done to have exact same behaviour as check mode, where consts are loaded and replaced
                 match observed_entry.entry_type {
                     TestVectorEntryType::Const => Ok(Some(
-                        V::deserialize(&observed_entry.value).with_context(|| {
+                        deserializer.expect("Deserializer was required but not provided")
+                            (&observed_entry.value).with_context(|| {
                             "Failed to deserialize constant value right after serializing it. \
                         There probably is a bug in the TestVectorMomento implementation"
                         })?,
@@ -351,7 +258,7 @@ pub fn process_next_entry<O, V: TestVectorMomento<O>>(
                 // Deserialize const values
                 match loaded_entry.entry_type {
                     TestVectorEntryType::Const => {
-                        V::deserialize(&loaded_entry.value).map(|v| Some(v))
+                        deserializer.expect("Deserializer was required but not provided")(&loaded_entry.value).map(|v| Some(v))
                     }
                     TestVectorEntryType::Output => Ok(None),
                 }
@@ -360,208 +267,208 @@ pub fn process_next_entry<O, V: TestVectorMomento<O>>(
     })
 }
 
-#[macro_export]
-macro_rules! process_tv_observation_const {
-    (
-        $observed_value:expr,
-        $momento_type:ty,
-        $name: expr,
-        $description:expr,
-        $code_location:expr,
-    ) => {{
-        #[allow(unused_braces)]
-        {
-            let value = &$observed_value;
-            $crate::process_next_entry::<_, $momento_type>(
-                $crate::TestVectorEntryType::Const,
-                $description,
-                $name,
-                value,
-                Some($code_location),
-            )
-            .expect("Error processing observed test vector value")
-            .expect("Unexpected error processing observed test vector const: no value was loaded")
-        }
-    }};
-}
+// #[macro_export]
+// macro_rules! process_tv_observation_const {
+//     (
+//         $observed_value:expr,
+//         $momento_type:ty,
+//         $name: expr,
+//         $description:expr,
+//         $code_location:expr,
+//     ) => {{
+//         #[allow(unused_braces)]
+//         {
+//             let value = &$observed_value;
+//             $crate::process_next_entry::<_, $momento_type>(
+//                 $crate::TestVectorEntryType::Const,
+//                 $description,
+//                 $name,
+//                 value,
+//                 Some($code_location),
+//             )
+//             .expect("Error processing observed test vector value")
+//             .expect("Unexpected error processing observed test vector const: no value was loaded")
+//         }
+//     }};
+// }
 
-#[macro_export]
-macro_rules! process_tv_observation_output {
-    (
-        $observed_value:expr,
-        $momento_type:ty,
-        $name: expr,
-        $description:expr,
-        $code_location:expr,
-    ) => {{
-        #[allow(unused_braces)]
-        {
-            let value = &$observed_value;
-            $crate::process_next_entry::<_, $momento_type>(
-                $crate::TestVectorEntryType::Output,
-                $description,
-                $name,
-                value,
-                Some($code_location),
-            )
-            .expect("Error processing observed test vector value");
-        }
-    }};
-}
+// #[macro_export]
+// macro_rules! process_tv_observation_output {
+//     (
+//         $observed_value:expr,
+//         $momento_type:ty,
+//         $name: expr,
+//         $description:expr,
+//         $code_location:expr,
+//     ) => {{
+//         #[allow(unused_braces)]
+//         {
+//             let value = &$observed_value;
+//             $crate::process_next_entry::<_, $momento_type>(
+//                 $crate::TestVectorEntryType::Output,
+//                 $description,
+//                 $name,
+//                 value,
+//                 Some($code_location),
+//             )
+//             .expect("Error processing observed test vector value");
+//         }
+//     }};
+// }
 
-// Define helper functions so that the compiler can infer the momento type.
-pub fn helper_infer_const<T: crate::TestVectorMomento<T>>(
-    observed: T,
-    name: Option<String>,
-    description: Option<String>,
-    code_location: String,
-) -> T {
-    crate::process_tv_observation_const!(observed, T, name, description, code_location,)
-}
-pub fn helper_infer_output<T: crate::TestVectorMomento<T>>(
-    observed: T,
-    name: Option<String>,
-    description: Option<String>,
-    code_location: String,
-) {
-    crate::process_tv_observation_output!(observed, T, name, description, code_location,)
-}
+// // Define helper functions so that the compiler can infer the momento type.
+// pub fn helper_infer_const<T: crate::TestVectorMomento<T>>(
+//     observed: T,
+//     name: Option<String>,
+//     description: Option<String>,
+//     code_location: String,
+// ) -> T {
+//     crate::process_tv_observation_const!(observed, T, name, description, code_location,)
+// }
+// pub fn helper_infer_output<T: crate::TestVectorMomento<T>>(
+//     observed: T,
+//     name: Option<String>,
+//     description: Option<String>,
+//     code_location: String,
+// ) {
+//     crate::process_tv_observation_output!(observed, T, name, description, code_location,)
+// }
 
-#[macro_export]
-macro_rules! tv_const {
-    (
-        $observed_value:expr,
-        $momento_type:ty,
-        $name: expr,
-        $description:expr
-    ) => {
-        $crate::process_tv_observation_const!(
-            $observed_value,
-            $momento_type,
-            Some($name.into()),
-            Some($description.into()),
-            format!("{}:{}", file!(), line!()),
-        )
-    };
-    // Version without description
-    ($observed_value:expr, $momento_type:ty, $name:expr) => {
-        $crate::process_tv_observation_const!(
-            $observed_value,
-            $momento_type,
-            Some($name.into()),
-            None,
-            format!("{}:{}", file!(), line!()),
-        )
-    };
-    // Version without name and description
-    ($observed_value:expr, $momento_type:ty) => {
-        $crate::process_tv_observation_const!(
-            $observed_value,
-            $momento_type,
-            None,
-            None,
-            format!("{}:{}", file!(), line!()),
-        )
-    };
-    // Version without momento_type
-    // 3-argument version: we want to infer the type of the observed value.
-    ($observed_value:expr, $name:expr, $description:expr) => {
-        $crate::helper_infer_const(
-            $observed_value,
-            Some($name.into()),
-            Some($description.into()),
-            format!("{}:{}", file!(), line!()),
-        )
-    };
-    // Version without description, and momento_type
-    ($observed_value:expr, $name:expr) => {
-        $crate::helper_infer_const(
-            $observed_value,
-            Some($name.into()),
-            None,
-            format!("{}:{}", file!(), line!()),
-        )
-    };
-    // Version without name and description, and momento_type
-    ($observed_value:expr) => {
-        $crate::helper_infer_const(
-            $observed_value,
-            None,
-            None,
-            format!("{}:{}", file!(), line!()),
-        )
-    };
-}
-
-#[macro_export]
-macro_rules! tv_output {
-    (
-        $observed_value:expr,
-        $momento_type:ty,
-        $name: expr,
-        $description:expr
-    ) => {
-        $crate::process_tv_observation_output!(
-            $observed_value,
-            $momento_type,
-            Some($name.into()),
-            Some($description.into()),
-            format!("{}:{}", file!(), line!()),
-        )
-    };
-    // Version without description
-    ($observed_value:expr, $momento_type:ty, $name:expr) => {
-        $crate::process_tv_observation_output!(
-            $observed_value,
-            $momento_type,
-            Some($name.into()),
-            None,
-            format!("{}:{}", file!(), line!()),
-        )
-    };
-    // Version without name and description
-    ($observed_value:expr, $momento_type:ty) => {
-        $crate::process_tv_observation_output!(
-            $observed_value,
-            $momento_type,
-            None,
-            None,
-            format!("{}:{}", file!(), line!()),
-        )
-    };
-    // Version without momento_type
-    // 3-argument version: we want to infer the type of the observed value.
-    ($observed_value:expr, $name:expr, $description:expr) => {
-        $crate::helper_infer_output(
-            $observed_value,
-            Some($name.into()),
-            Some($description.into()),
-            format!("{}:{}", file!(), line!()),
-        )
-    };
-    // Version without description, and momento_type
-    ($observed_value:expr, $name:expr) => {
-        $crate::helper_infer_output(
-            $observed_value,
-            Some($name.into()),
-            None,
-            format!("{}:{}", file!(), line!()),
-        )
-    };
-    // Version without name and description, and momento_type
-    ($observed_value:expr) => {
-        $crate::helper_infer_output(
-            $observed_value,
-            None,
-            None,
-            format!("{}:{}", file!(), line!()),
-        )
-    };
-}
-
-#[macro_export]
-macro_rules! tv_if_enabled {
-    ($($tt:tt)*) => {
-        $($tt)*
-    };
-}
+// #[macro_export]
+// macro_rules! tv_const {
+//     (
+//         $observed_value:expr,
+//         $momento_type:ty,
+//         $name: expr,
+//         $description:expr
+//     ) => {
+//         $crate::process_tv_observation_const!(
+//             $observed_value,
+//             $momento_type,
+//             Some($name.into()),
+//             Some($description.into()),
+//             format!("{}:{}", file!(), line!()),
+//         )
+//     };
+//     // Version without description
+//     ($observed_value:expr, $momento_type:ty, $name:expr) => {
+//         $crate::process_tv_observation_const!(
+//             $observed_value,
+//             $momento_type,
+//             Some($name.into()),
+//             None,
+//             format!("{}:{}", file!(), line!()),
+//         )
+//     };
+//     // Version without name and description
+//     ($observed_value:expr, $momento_type:ty) => {
+//         $crate::process_tv_observation_const!(
+//             $observed_value,
+//             $momento_type,
+//             None,
+//             None,
+//             format!("{}:{}", file!(), line!()),
+//         )
+//     };
+//     // Version without momento_type
+//     // 3-argument version: we want to infer the type of the observed value.
+//     ($observed_value:expr, $name:expr, $description:expr) => {
+//         $crate::helper_infer_const(
+//             $observed_value,
+//             Some($name.into()),
+//             Some($description.into()),
+//             format!("{}:{}", file!(), line!()),
+//         )
+//     };
+//     // Version without description, and momento_type
+//     ($observed_value:expr, $name:expr) => {
+//         $crate::helper_infer_const(
+//             $observed_value,
+//             Some($name.into()),
+//             None,
+//             format!("{}:{}", file!(), line!()),
+//         )
+//     };
+//     // Version without name and description, and momento_type
+//     ($observed_value:expr) => {
+//         $crate::helper_infer_const(
+//             $observed_value,
+//             None,
+//             None,
+//             format!("{}:{}", file!(), line!()),
+//         )
+//     };
+// }
+//
+// #[macro_export]
+// macro_rules! tv_output {
+//     (
+//         $observed_value:expr,
+//         $momento_type:ty,
+//         $name: expr,
+//         $description:expr
+//     ) => {
+//         $crate::process_tv_observation_output!(
+//             $observed_value,
+//             $momento_type,
+//             Some($name.into()),
+//             Some($description.into()),
+//             format!("{}:{}", file!(), line!()),
+//         )
+//     };
+//     // Version without description
+//     ($observed_value:expr, $momento_type:ty, $name:expr) => {
+//         $crate::process_tv_observation_output!(
+//             $observed_value,
+//             $momento_type,
+//             Some($name.into()),
+//             None,
+//             format!("{}:{}", file!(), line!()),
+//         )
+//     };
+//     // Version without name and description
+//     ($observed_value:expr, $momento_type:ty) => {
+//         $crate::process_tv_observation_output!(
+//             $observed_value,
+//             $momento_type,
+//             None,
+//             None,
+//             format!("{}:{}", file!(), line!()),
+//         )
+//     };
+//     // Version without momento_type
+//     // 3-argument version: we want to infer the type of the observed value.
+//     ($observed_value:expr, $name:expr, $description:expr) => {
+//         $crate::helper_infer_output(
+//             $observed_value,
+//             Some($name.into()),
+//             Some($description.into()),
+//             format!("{}:{}", file!(), line!()),
+//         )
+//     };
+//     // Version without description, and momento_type
+//     ($observed_value:expr, $name:expr) => {
+//         $crate::helper_infer_output(
+//             $observed_value,
+//             Some($name.into()),
+//             None,
+//             format!("{}:{}", file!(), line!()),
+//         )
+//     };
+//     // Version without name and description, and momento_type
+//     ($observed_value:expr) => {
+//         $crate::helper_infer_output(
+//             $observed_value,
+//             None,
+//             None,
+//             format!("{}:{}", file!(), line!()),
+//         )
+//     };
+// }
+//
+// #[macro_export]
+// macro_rules! tv_if_enabled {
+//     ($($tt:tt)*) => {
+//         $($tt)*
+//     };
+// }

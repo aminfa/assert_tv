@@ -2,26 +2,39 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::env;
 
-#[cfg(feature = "enabled")]
 mod test_vec_impl;
-#[cfg(feature = "enabled")]
+mod set;
+mod storage;
+
 pub use test_vec_impl::{
-    finalize_tv_case, helper_infer_const, helper_infer_output, initialize_tv_case_from_file,
-    process_next_entry, process_next_entry_infer_type, TestVectorEntryType,
+    finalize_tv_case, initialize_tv_case_from_file,
+    process_next_entry, TestVectorEntryType, TestVecEnv,
 };
 
-#[cfg(all(feature = "enabled", feature = "tls"))]
-pub use test_vec_impl::storage::TlsEnvGuard;
+pub use set::{
+    TestValue, TestVector, TestVectorSet, TestVectorNOP, TestVectorActive
+};
 
-#[cfg(not(feature = "enabled"))]
-mod test_vec_no_impl;
-#[cfg(not(feature = "enabled"))]
-pub use test_vec_no_impl::{finalize_tv_case, initialize_tv_case_from_file};
+pub use assert_tv_macros::TestVectorSet;
+pub use assert_tv_macros::test_vec_case;
+
+
+#[cfg(feature = "tls")]
+pub use storage::tls_storage::TlsEnvGuard;
+
+#[cfg(not(feature = "tls"))]
+pub use storage::storage_global::TlsEnvGuard;
+
+
+pub type DynSerializer<O> = Box<dyn Fn(&O) -> anyhow::Result<serde_json::Value> + 'static>;
+pub type DynDeserializer<O> = Box<dyn Fn(&serde_json::Value) -> anyhow::Result<O> + 'static>;
+
 
 #[derive(Clone, Copy)]
 pub enum TestVectorFileFormat {
     Json,
     Yaml,
+    Toml,
 }
 
 #[derive(Clone, Copy)]
@@ -40,47 +53,24 @@ impl TestMode {
     }
 }
 
-// pub trait TestVectorMomento {
-//     type Originator;
-//
-//     fn serialize(original_value: &Self::Originator) -> anyhow::Result<serde_json::Value>;
-//
-//     fn deserialize(value: &serde_json::Value) -> anyhow::Result<Self::Originator>;
-// }
-// impl<T> TestVectorMomento for T
-// where
-//     T: Serialize + DeserializeOwned,
-// {
-//     type Originator = Self;
-//
-//     fn serialize(original_value: &Self::Originator) -> anyhow::Result<serde_json::Value> {
-//         // Convert the value to a serde_json::Value, mapping errors using anyhow.
-//         serde_json::to_value(original_value).map_err(anyhow::Error::new)
-//     }
-//
-//     fn deserialize(value: &serde_json::Value) -> anyhow::Result<Self::Originator> {
-//         // We clone the value because from_value takes ownership.
-//         serde_json::from_value(value.clone()).map_err(anyhow::Error::new)
-//     }
-// }
-
 pub trait TestVectorMomento<O> {
-    fn serialize(original_value: &O) -> anyhow::Result<serde_json::Value>;
+    fn serialize(&self, original_value: &O) -> anyhow::Result<serde_json::Value>;
 
-    fn deserialize(value: &serde_json::Value) -> anyhow::Result<O>;
+    fn deserialize(&self, value: &serde_json::Value) -> anyhow::Result<O>;
 }
 
 impl<O> TestVectorMomento<O> for O
 where
     O: Serialize + DeserializeOwned,
 {
-    fn serialize(original_value: &O) -> anyhow::Result<serde_json::Value> {
+    fn serialize(&self, original_value: &O) -> anyhow::Result<serde_json::Value> {
         // Convert the value to a serde_json::Value, mapping errors using anyhow.
         serde_json::to_value(original_value).map_err(anyhow::Error::new)
     }
 
-    fn deserialize(value: &serde_json::Value) -> anyhow::Result<O> {
+    fn deserialize(&self, value: &serde_json::Value) -> anyhow::Result<O> {
         // We clone the value because from_value takes ownership.
         serde_json::from_value(value.clone()).map_err(anyhow::Error::new)
     }
 }
+
