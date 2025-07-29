@@ -3,10 +3,8 @@ mod derive;
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn, Expr, Lit, Meta, Token, Error, DeriveInput};
 use syn::punctuated::Punctuated;
-
-
+use syn::{parse_macro_input, DeriveInput, Error, Expr, ItemFn, Lit, Meta, Token};
 
 /// Derive macro for [`assert_tv::TestVectorSet`].
 ///
@@ -88,12 +86,11 @@ pub fn derive_test_vector_set(input: TokenStream) -> TokenStream {
     }
 }
 
-
 /// An attribute macro for simplifying the creation of test functions that utilize test vectors.
 ///
 /// This macro allows you to write data-driven tests using external test vectors stored in YAML or JSON files.
 /// It provides flexibility by supporting different modes of operation: initializing, checking, and recording test cases.
-/// 
+///
 /// # Usage
 ///
 /// The `test_vec_case` macro is applied as an attribute to test functions. Here's a basic example:
@@ -129,7 +126,7 @@ pub fn derive_test_vector_set(input: TokenStream) -> TokenStream {
 ///      - `"check"`
 ///    - Default: If no value is specified, the `TEST_MODE` env-variable is queried for a fall-back. Else `"check"` is used as the default.
 ///    - Example: `#[test_vec(mode = "init")]`
-/// 
+///
 /// # Notes
 ///
 /// - The generated default file path for test vectors is `.test_vectors/<function_name>.<format>`.
@@ -157,7 +154,7 @@ pub fn test_vec_case(attr: TokenStream, item: TokenStream) -> TokenStream {
                 });
 
                 if ident == "file" {
-                    if let Expr:: Lit(lit_str)  = nv.value {
+                    if let Expr::Lit(lit_str) = nv.value {
                         let Lit::Str(v) = lit_str.lit else {
                             return Error::new_spanned(lit_str, "expected string literal")
                                 .to_compile_error()
@@ -170,23 +167,25 @@ pub fn test_vec_case(attr: TokenStream, item: TokenStream) -> TokenStream {
                             .into();
                     }
                 } else if ident == "format" {
-                    if let Expr:: Lit(lit_str)  = nv.value {
+                    if let Expr::Lit(lit_str) = nv.value {
                         let Lit::Str(v) = lit_str.clone().lit else {
                             return Error::new_spanned(lit_str.clone(), "expected string literal")
                                 .to_compile_error()
                                 .into();
                         };
                         (file_format_ending, file_format_quoted) = match v.value().as_str() {
-                            "yaml" | "yml" => ("yaml",
-                                               quote! {assert_tv::TestVectorFileFormat::Yaml}),
-                            "json" => ("json",
-                                       quote! {assert_tv::TestVectorFileFormat::Json}),
-                            "toml" => ("toml",
-                                       quote! {assert_tv::TestVectorFileFormat::Toml}),
+                            "yaml" | "yml" => {
+                                ("yaml", quote! {assert_tv::TestVectorFileFormat::Yaml})
+                            }
+                            "json" => ("json", quote! {assert_tv::TestVectorFileFormat::Json}),
+                            "toml" => ("toml", quote! {assert_tv::TestVectorFileFormat::Toml}),
                             _ => {
-                                return Error::new_spanned(lit_str, "invalid format, expected yaml/yml or json")
-                                    .to_compile_error()
-                                    .into();
+                                return Error::new_spanned(
+                                    lit_str,
+                                    "invalid format, expected yaml/yml or json",
+                                )
+                                .to_compile_error()
+                                .into();
                             }
                         };
                     } else {
@@ -194,9 +193,8 @@ pub fn test_vec_case(attr: TokenStream, item: TokenStream) -> TokenStream {
                             .to_compile_error()
                             .into();
                     }
-                }
-                else if ident == "mode" {
-                    if let Expr:: Lit(lit_str)  = nv.value {
+                } else if ident == "mode" {
+                    if let Expr::Lit(lit_str) = nv.value {
                         let Lit::Str(v) = lit_str.clone().lit else {
                             return Error::new_spanned(lit_str.clone(), "expected string literal")
                                 .to_compile_error()
@@ -206,9 +204,12 @@ pub fn test_vec_case(attr: TokenStream, item: TokenStream) -> TokenStream {
                             "init" => quote! {assert_tv::TestMode::Init},
                             "check" => quote! {assert_tv::TestMode::Check},
                             _ => {
-                                return Error::new_spanned(lit_str, "invalid format, expected init, check")
-                                    .to_compile_error()
-                                    .into();
+                                return Error::new_spanned(
+                                    lit_str,
+                                    "invalid format, expected init, check",
+                                )
+                                .to_compile_error()
+                                .into();
                             }
                         };
                     } else {
@@ -218,21 +219,21 @@ pub fn test_vec_case(attr: TokenStream, item: TokenStream) -> TokenStream {
                     }
                 }
             }
-            _ => return Error::new_spanned(meta, "unsupported attribute format")
-                .to_compile_error()
-                .into(),
+            _ => {
+                return Error::new_spanned(meta, "unsupported attribute format")
+                    .to_compile_error()
+                    .into()
+            }
         }
     }
     let file_path: String = match file_path {
         Some(file_path) => file_path,
         None => {
             // default file path is derived from the test function name and is put under .test_vectors/
-            let default_file = format!(".test_vectors/{}.{}", fn_name, file_format_ending);
+            let default_file = format!(".test_vectors/{fn_name}.{file_format_ending}");
             default_file
         }
     };
-
-
 
     // let file_path_quoted = quote! {file_path};
     // let file_format_quoted = quote! {file_format};

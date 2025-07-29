@@ -1,13 +1,12 @@
 //! Derive macro for `assert_tv::TestVectorSet`.
-use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::{format_ident, quote, ToTokens};
-use syn::{parse_macro_input, spanned::Spanned, Attribute, Data, DeriveInput, Error, Fields, Lit, LitStr, Meta, MetaList, Type, WhereClause};
-use syn::punctuated::Punctuated;
+use quote::quote;
+use syn::{spanned::Spanned, Attribute, Data, DeriveInput, Error, Fields, LitStr, Type};
 // -----------------------------------------------------------------------------
 // Implementation
 // -----------------------------------------------------------------------------
 
+#[allow(dead_code)]
 /// Everything we need for one field
 struct FieldCfg {
     ident: syn::Ident,
@@ -119,7 +118,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStrea
                 }
             }
         } else {
-            quote! { 
+            quote! {
                 if TV::is_test_vector_enabled() {
                     Some(::std::boxed::Box::new(|v| ::serde_json::from_value(v.clone()).map_err(::anyhow::Error::from)))
                 } else {
@@ -241,21 +240,3 @@ pub fn parse_test_vec_attribute(
     })
 }
 
-
-/// Ensures `ty` is `TestValue<X>` and returns `X`.
-fn inner_test_value_type(ty: &Type) -> syn::Result<&Type> {
-    match ty {
-        Type::Path(p) if p.path.segments.last().map(|s| s.ident == "TestValue").unwrap_or(false) => {
-            if let syn::PathArguments::AngleBracketed(args) = &p.path.segments.last().unwrap().arguments {
-                if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                    return Ok(inner);
-                }
-            }
-            Err(Error::new_spanned(ty, "`TestValue` must have exactly one generic parameter"))
-        }
-        _ => Err(Error::new_spanned(
-            ty,
-            "all fields in a TestVectorSet must be of type `TestValue<…>`",
-        )),
-    }
-}

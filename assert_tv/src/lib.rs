@@ -2,22 +2,19 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::env;
 
-mod test_vec_impl;
 mod set;
 mod storage;
+mod test_vec_impl;
 
 pub use test_vec_impl::{
-    finalize_tv_case, initialize_tv_case_from_file,
-    process_next_entry, TestVectorEntryType, TestVecEnv,
+    finalize_tv_case, initialize_tv_case_from_file, process_next_entry, TestVecEnv,
+    TestVectorEntryType,
 };
 
-pub use set::{
-    TestValue, TestVector, TestVectorSet, TestVectorNOP, TestVectorActive
-};
+pub use set::{TestValue, TestVector, TestVectorActive, TestVectorNOP, TestVectorSet};
 
-pub use assert_tv_macros::TestVectorSet;
 pub use assert_tv_macros::test_vec_case;
-
+pub use assert_tv_macros::TestVectorSet;
 
 #[cfg(feature = "tls")]
 pub use storage::tls_storage::TlsEnvGuard;
@@ -25,10 +22,8 @@ pub use storage::tls_storage::TlsEnvGuard;
 #[cfg(not(feature = "tls"))]
 pub use storage::storage_global::TlsEnvGuard;
 
-
 pub type DynSerializer<O> = Box<dyn Fn(&O) -> anyhow::Result<serde_json::Value> + 'static>;
 pub type DynDeserializer<O> = Box<dyn Fn(&serde_json::Value) -> anyhow::Result<O> + 'static>;
-
 
 #[derive(Clone, Copy)]
 pub enum TestVectorFileFormat {
@@ -73,4 +68,3 @@ where
         serde_json::from_value(value.clone()).map_err(anyhow::Error::new)
     }
 }
-

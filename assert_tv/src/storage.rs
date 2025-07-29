@@ -1,4 +1,3 @@
-
 #[cfg(not(feature = "tls"))]
 pub(crate) mod storage_global {
     use std::marker::PhantomData;
@@ -59,13 +58,13 @@ pub(crate) mod storage_global {
 
 #[cfg(feature = "tls")]
 pub(crate) mod tls_storage {
+    use crate::TestVecEnv;
+    use anyhow::bail;
     use std::cell::RefCell;
     use std::marker::PhantomData;
-    use anyhow::bail;
-    use crate::TestVecEnv;
 
     thread_local! {
-        static TEST_VEC_ENV: RefCell<Option<TestVecEnv>> = RefCell::new(None);
+        static TEST_VEC_ENV: RefCell<Option<TestVecEnv>> = const { RefCell::new(None) };
     }
 
     pub struct TlsEnvGuard {

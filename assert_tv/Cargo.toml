@@ -21,7 +21,7 @@ log = { version = "0.4", optional = false }
 anyhow = "1.x"
 serde_yaml = { version = "0.9", optional = false }
 toml = { version = "0.x", optional = false }
-assert_tv_macros = { path = "../assert_tv_macros", version = "0.6.0" }
+assert_tv_macros = { path = "../assert_tv_macros", version = "0.6.1" }
 
 [dev-dependencies]
 rand = "0.9.2"

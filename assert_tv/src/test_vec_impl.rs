@@ -1,7 +1,7 @@
-use std::io::{Read, Write};
 use crate::{DynDeserializer, DynSerializer, TestMode, TestVectorFileFormat, TlsEnvGuard};
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
@@ -62,17 +62,18 @@ impl TestVectorData {
                 )
             })?,
             TestVectorFileFormat::Toml => {
-                let mut buffer: String= String::new();
-                tv_file.read_to_string(&mut buffer).map_err(|e|
-                    anyhow::anyhow!("Failed to read test vector file: {}", e))?;
+                let mut buffer: String = String::new();
+                tv_file
+                    .read_to_string(&mut buffer)
+                    .map_err(|e| anyhow::anyhow!("Failed to read test vector file: {}", e))?;
                 toml::from_str(buffer.as_ref()).map_err(|e| {
                     anyhow::anyhow!(
-                    "Failed to parse test vector file ({:?}) as toml: {}",
-                    tv_file_path,
-                    e
-                )
+                        "Failed to parse test vector file ({:?}) as toml: {}",
+                        tv_file_path,
+                        e
+                    )
                 })?
-            },
+            }
         };
         Ok(tv_data)
     }
@@ -100,11 +101,13 @@ impl TestVectorData {
             TestVectorFileFormat::Yaml => serde_yaml::to_writer(tv_file, &self)
                 .map_err(|e| anyhow::anyhow!("Failed to write test vector file as yaml: {}", e))?,
             TestVectorFileFormat::Toml => {
-                let tv_serialized: String = toml::to_string(&self)
-                    .map_err(|e| anyhow::anyhow!("Failed to serialize test vector as toml: {}", e))?;
-                tv_file.write(tv_serialized.as_bytes())
+                let tv_serialized: String = toml::to_string(&self).map_err(|e| {
+                    anyhow::anyhow!("Failed to serialize test vector as toml: {}", e)
+                })?;
+                tv_file
+                    .write(tv_serialized.as_bytes())
                     .map_err(|e| anyhow::anyhow!("Failed to write test vector: {}", e))?;
-            },
+            }
         };
         Ok(())
     }
@@ -188,8 +191,10 @@ pub fn process_next_entry<O>(
                 // This is done to have exact same behaviour as check mode, where consts are loaded and replaced
                 match observed_entry.entry_type {
                     TestVectorEntryType::Const => Ok(Some(
-                        deserializer.expect("Deserializer was required but not provided")
-                            (&observed_entry.value).with_context(|| {
+                        deserializer.expect("Deserializer was required but not provided")(
+                            &observed_entry.value,
+                        )
+                        .with_context(|| {
                             "Failed to deserialize constant value right after serializing it. \
                         There probably is a bug in the TestVectorMomento implementation"
                         })?,
@@ -257,9 +262,11 @@ pub fn process_next_entry<O>(
 
                 // Deserialize const values
                 match loaded_entry.entry_type {
-                    TestVectorEntryType::Const => {
-                        deserializer.expect("Deserializer was required but not provided")(&loaded_entry.value).map(|v| Some(v))
-                    }
+                    TestVectorEntryType::Const => deserializer
+                        .expect("Deserializer was required but not provided")(
+                        &loaded_entry.value
+                    )
+                    .map(|v| Some(v)),
                     TestVectorEntryType::Output => Ok(None),
                 }
             }
