@@ -5,28 +5,28 @@
       "description": null,
       "name": null,
       "value": 4,
-      "code_location": "example/src/main.rs:29"
+      "code_location": "example/src/main.rs:34"
     },
     {
       "entry_type": "Const",
       "description": "b is the second input",
       "name": "b",
       "value": 4,
-      "code_location": "example/src/main.rs:30"
+      "code_location": "example/src/main.rs:34"
     },
     {
       "entry_type": "Const",
-      "description": "intermediate value m",
-      "name": "m",
+      "description": null,
+      "name": null,
       "value": 20,
-      "code_location": "example/src/main.rs:11"
+      "code_location": "example/src/main.rs:12"
     },
     {
       "entry_type": "Output",
-      "description": "",
-      "name": "output",
+      "description": null,
+      "name": null,
       "value": 16,
-      "code_location": "example/src/main.rs:32"
+      "code_location": "example/src/main.rs:34"
     }
   ]
 }
