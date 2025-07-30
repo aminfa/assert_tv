@@ -5,28 +5,32 @@
       "description": null,
       "name": null,
       "value": 4,
-      "code_location": "example/src/main.rs:34"
+      "code_location": "example/src/main.rs:42",
+      "test_vec_set_code_location": "example/src/main.rs:31"
     },
     {
       "entry_type": "Const",
       "description": "b is the second input",
       "name": "b",
-      "value": 4,
-      "code_location": "example/src/main.rs:34"
+      "code_location": "example/src/main.rs:43",
+      "test_vec_set_code_location": "example/src/main.rs:31",
+      "offload": true
     },
     {
       "entry_type": "Const",
       "description": null,
       "name": null,
       "value": 20,
-      "code_location": "example/src/main.rs:12"
+      "code_location": "example/src/main.rs:17",
+      "test_vec_set_code_location": "example/src/main.rs:9"
     },
     {
       "entry_type": "Output",
       "description": null,
       "name": null,
       "value": 16,
-      "code_location": "example/src/main.rs:34"
+      "code_location": "example/src/main.rs:45",
+      "test_vec_set_code_location": "example/src/main.rs:31"
     }
   ]
 }

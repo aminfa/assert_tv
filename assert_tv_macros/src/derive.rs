@@ -1,7 +1,7 @@
 //! Derive macro for `assert_tv::TestVectorSet`.
 use proc_macro2::Span;
 use quote::quote;
-use syn::{spanned::Spanned, Attribute, Data, DeriveInput, Error, Fields, LitStr, Type};
+use syn::{spanned::Spanned, Attribute, Data, DeriveInput, Error, Fields, LitBool, LitStr, Type};
 // -----------------------------------------------------------------------------
 // Implementation
 // -----------------------------------------------------------------------------
@@ -15,6 +15,8 @@ struct FieldCfg {
     description: Option<String>,
     serialize_with: Option<syn::Path>,
     deserialize_with: Option<syn::Path>,
+    compress: Option<bool>,
+    offload: Option<bool>,
     span: Span,
 }
 
@@ -58,6 +60,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStrea
         let mut description = None;
         let mut serialize_with = None;
         let mut deserialize_with = None;
+        let mut compress = None;
+        let mut offload = None;
 
         for attr in &field.attrs {
             if !attr.path().is_ident("test_vec") {
@@ -70,6 +74,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStrea
                 &mut description,
                 &mut serialize_with,
                 &mut deserialize_with,
+                &mut compress,
+                &mut offload,
             )?;
         }
 
@@ -80,6 +86,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStrea
             description,
             serialize_with,
             deserialize_with,
+            compress,
+            offload,
             span,
         });
     }
@@ -89,6 +97,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStrea
         let ident = &f.ident;
         let name = opt_string(&f.name);
         let description = opt_string(&f.description);
+        let compress = opt_bool_default_false(&f.compress);
+        let offload = opt_bool_default_false(&f.offload);
 
         let serializer = if let Some(path) = &f.serialize_with {
             quote! {
@@ -134,6 +144,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStrea
                 test_value_field_code_location: format!("{}:{}", ::core::file!(), ::core::line!()),
                 serializer: #serializer,
                 deserializer: #deserializer,
+                compress: #compress,
+                offload: #offload,
                 _data_marker: ::core::default::Default::default(),
             }
         }
@@ -158,6 +170,13 @@ fn opt_string(opt: &Option<String>) -> proc_macro2::TokenStream {
     match opt {
         Some(s) => quote! { Some(::std::string::String::from(#s)) },
         None => quote! { None },
+    }
+}
+
+fn opt_bool_default_false(opt: &Option<bool>) -> proc_macro2::TokenStream {
+    match opt {
+        Some(b) => quote! { #b },
+        None => quote! { #false },
     }
 }
 
@@ -190,10 +209,17 @@ pub fn parse_test_vec_attribute(
     description: &mut Option<String>,
     serialize_with: &mut Option<syn::Path>,
     deserialize_with: &mut Option<syn::Path>,
+    compress: &mut Option<bool>,
+    offload: &mut Option<bool>,
 ) -> syn::Result<()> {
     attr.parse_nested_meta(|meta| {
         // ---- helper -------------------------------------------------------
         let get_lit_str = || -> syn::Result<LitStr> {
+            meta.value()?
+                .parse()
+                .map_err(|e: Error| Error::new(meta.path.span(), e.to_string()))
+        };
+        let get_lit_bool = || -> syn::Result<LitBool> {
             meta.value()?
                 .parse()
                 .map_err(|e: Error| Error::new(meta.path.span(), e.to_string()))
@@ -234,8 +260,22 @@ pub fn parse_test_vec_attribute(
             return Ok(());
         }
 
+        // if meta.path.is_ident("compress") {
+        //     let lit: LitBool = get_lit_bool()?;
+        //     if compress.replace(lit.value()).is_some() {
+        //         return Err(meta.error("duplicate `compress` key"));
+        //     }
+        // }
+        if meta.path.is_ident("offload") {
+            let lit: LitBool = get_lit_bool()?;
+            if offload.replace(lit.value()).is_some() {
+                return Err(meta.error("duplicate `offload` key"));
+            }
+            return Ok(());
+        }
+
         Err(meta.error(
-            "unrecognised key; allowed: name, description, serialize_with, deserialize_with",
+            "unrecognised key; allowed: name, description, serialize_with, deserialize_with, offload",
         ))
     })
 }

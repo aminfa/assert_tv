@@ -4,6 +4,7 @@ use crate::{
 };
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
+use std::panic::Location;
 use std::path::PathBuf;
 
 pub trait TestVectorSet {
@@ -16,6 +17,8 @@ pub struct TestValue<O> {
     pub test_value_field_code_location: String,
     pub serializer: Option<DynSerializer<O>>,
     pub deserializer: Option<DynDeserializer<O>>,
+    pub compress: bool,
+    pub offload: bool,
     pub _data_marker: PhantomData<O>,
 }
 
@@ -39,6 +42,8 @@ impl<O> TestValue<O> {
         code_location: String,
         serializer: Option<DynSerializer<O>>,
         deserializer: Option<DynDeserializer<O>>,
+        compress: bool,
+        offload: bool,
     ) -> Self {
         Self {
             name,
@@ -46,6 +51,8 @@ impl<O> TestValue<O> {
             test_value_field_code_location: code_location,
             serializer,
             deserializer,
+            compress,
+            offload,
             _data_marker: PhantomData,
         }
     }
@@ -70,57 +77,61 @@ pub trait TestVector {
     }
 
     #[inline(always)]
+    #[track_caller]
     fn expose_value<O>(test_vec_field: &TestValue<O>, mut observed_value: O) -> O {
-        Self::expose_mut_value(test_vec_field, &mut observed_value);
-        observed_value
-    }
-
-    #[inline(always)]
-    fn expose_mut_value<O>(test_vec_field: &TestValue<O>, observed_mut_value: &mut O) {
-        *observed_mut_value = crate::process_next_entry(
+        let caller_location = Location::caller();
+        let caller_location = Some(format!("{}:{}", caller_location.file(), caller_location.line()));
+        let value = crate::process_next_entry(
             crate::TestVectorEntryType::Const,
             test_vec_field.description.clone(),
             test_vec_field.name.clone(),
-            observed_mut_value,
+            &observed_value,
+            caller_location,
             Some(test_vec_field.test_value_field_code_location.clone()),
             test_vec_field.serializer.as_ref().unwrap_or_else(|| panic!("Serializer was not provided for test field: {test_vec_field:?}")),
             Some(
                 test_vec_field.deserializer.as_ref().unwrap_or_else(|| panic!("Deserializer was not provided for test field: {test_vec_field:?}")),
             ),
+            test_vec_field.offload,
+        )
+            .expect("Error processing observed test vector value")
+            .expect("Unexpected error processing observed test vector const: no value was loaded");
+        value
+    }
+
+    #[inline(always)]
+    #[track_caller]
+    fn expose_mut_value<O>(test_vec_field: &TestValue<O>, observed_mut_value: &mut O) {
+        let caller_location = Location::caller();
+        let caller_location = Some(format!("{}:{}", caller_location.file(), caller_location.line()));
+        *observed_mut_value = crate::process_next_entry(
+            crate::TestVectorEntryType::Const,
+            test_vec_field.description.clone(),
+            test_vec_field.name.clone(),
+            observed_mut_value,
+            caller_location,
+            Some(test_vec_field.test_value_field_code_location.clone()),
+            test_vec_field.serializer.as_ref().unwrap_or_else(|| panic!("Serializer was not provided for test field: {test_vec_field:?}")),
+            Some(
+                test_vec_field.deserializer.as_ref().unwrap_or_else(|| panic!("Deserializer was not provided for test field: {test_vec_field:?}")),
+            ),
+            test_vec_field.offload,
         )
         .expect("Error processing observed test vector value")
         .expect("Unexpected error processing observed test vector const: no value was loaded");
     }
 
-    // #[inline(always)]
-    // fn load_value<F: TestVectorField>(observed_value: F::Value) -> F::Value {
-    //     process_tv_observation_const!(
-    //         observed_value,
-    //         F::Momento,
-    //         F::name(),
-    //         F::description(),
-    //         F::code_location(),
-    //     )
-    // }
-
-    // #[inline(always)]
-    // fn load_mut_value<F: TestVectorField>(observed_value: &mut F::Value) {
-    //     *observed_value = process_tv_observation_const!(
-    //         observed_value,
-    //         F::Momento,
-    //         F::name(),
-    //         F::description(),
-    //         F::code_location(),
-    //     );
-    // }
-
     #[inline(always)]
+    #[track_caller]
     fn check_value<O>(test_vec_field: &TestValue<O>, observed_value: &O) {
+        let caller_location = Location::caller();
+        let caller_location = Some(format!("{}:{}", caller_location.file(), caller_location.line()));
         crate::process_next_entry(
             crate::TestVectorEntryType::Output,
             test_vec_field.description.clone(),
             test_vec_field.name.clone(),
             observed_value,
+            caller_location,
             Some(test_vec_field.test_value_field_code_location.clone()),
             test_vec_field.serializer.as_ref().unwrap_or_else(|| {
                 panic!(
@@ -128,6 +139,7 @@ pub trait TestVector {
                 )
             }),
             None,
+            test_vec_field.offload,
         )
         .expect("Error checking observed test vector value");
     }

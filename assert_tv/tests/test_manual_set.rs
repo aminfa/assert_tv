@@ -40,6 +40,8 @@ impl assert_tv::TestVectorSet for SomeTestFields {
                 } else {
                     None
                 },
+                compress: true,
+                offload: false,
                 _data_marker: std::default::Default::default(),
             },
             b: assert_tv::TestValue {
@@ -52,6 +54,8 @@ impl assert_tv::TestVectorSet for SomeTestFields {
                 deserializer: Some(Box::new(|v| {
                     serde_json::from_value(v.clone()).map_err(anyhow::Error::from)
                 })),
+                compress: true,
+                offload: true,
                 _data_marker: std::default::Default::default(),
             },
         }
@@ -88,7 +92,7 @@ fn test_manual_set() {
     let should_be_err = initialize_tv_case_from_file(
         "manual_tv.toml",
         TestVectorFileFormat::Toml,
-        TestMode::Check,
+        TestMode::Init,
     );
     if should_be_err.is_ok() {
         panic!("Should not be able to initialize manual_tv.toml again");
@@ -150,5 +154,5 @@ fn test_manual_set() {
     some_other_functionality::<TestVectorNOP>(a);
 
     // delete manual_tv.toml
-    std::fs::remove_file(tv_file_path).unwrap()
+    // std::fs::remove_file(tv_file_path).unwrap()
 }

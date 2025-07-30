@@ -1,16 +1,25 @@
 use crate::{DynDeserializer, DynSerializer, TestMode, TestVectorFileFormat, TlsEnvGuard};
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::io::{Cursor, Read, Write};
+use std::path::{Path, PathBuf};
+use log::warn;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct TestVectorEntry {
     entry_type: TestVectorEntryType,
     description: Option<String>,
     name: Option<String>,
+    #[serde(
+        default = "default_null",
+        skip_serializing_if = "is_null"
+    )]
     value: serde_json::Value,
     code_location: Option<String>,
+    test_vec_set_code_location: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    offload: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Eq, PartialEq, Clone)]
@@ -46,7 +55,7 @@ impl TestVectorData {
                 e
             )
         })?;
-        let tv_data: TestVectorData = match file_format {
+        let mut tv_data: TestVectorData = match file_format {
             TestVectorFileFormat::Json => serde_json::from_reader(tv_file).map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to parse test vector file ({:?}) as json: {}",
@@ -75,15 +84,88 @@ impl TestVectorData {
                 })?
             }
         };
+        tv_data.load_offloaded_values(tv_file_path.clone())?;
         Ok(tv_data)
     }
 
+    fn load_offloaded_values(&mut self, tv_file_path: PathBuf,) -> anyhow::Result<()> {
+        for (entry_index, entry) in self.entries.iter_mut().enumerate() {
+            if !(entry.offload) {
+                continue;
+            }
+            if !entry.value.is_null() {
+                warn!("Test value entry is set to offload but still has a value already loaded")
+            }
+            let offloaded_path =  append_suffix_to_filename(&tv_file_path,
+                                                            format!("_offloaded_value_{}.zstd", entry_index).as_str());
+            if !offloaded_path.exists() {
+                bail!("Cannot load offloaded value (index={}), offloaded file does not exist: {}",
+                    entry_index, offloaded_path.to_str().unwrap());
+            }
+
+            let mut offloaded_value_file = std::fs::File::open(offloaded_path.clone()).map_err(|e| {
+                anyhow::anyhow!(
+                "Failed to open offloaded value file ({:?}): {}",
+                offloaded_path,
+                e
+            ) })?;
+            let mut offloaded_value_bytes = Vec::new();
+            offloaded_value_file.read_to_end(&mut offloaded_value_bytes)
+                .map_err(|e| anyhow::anyhow!("Failed to read offloaded value file: {}", e))?;
+            drop(offloaded_value_file);
+            let offloaded_value_bytes = decompress(offloaded_value_bytes)?;
+            let offloaded_value: serde_json::value::Value = serde_json::from_slice(&offloaded_value_bytes)
+                .map_err(|e| anyhow::anyhow!("Failed to parse offloaded value as a json value: {}", e))?;
+            entry.value = offloaded_value;
+        }
+        Ok(())
+    }
+
+    fn save_offloaded_values(&mut self, tv_file_path: PathBuf) -> anyhow::Result<()> {
+        for (entry_index, entry) in self.entries.iter_mut().enumerate() {
+            if !entry.offload {
+                continue;
+            }
+
+            let offloaded_path = append_suffix_to_filename(
+                &tv_file_path,
+                format!("_offloaded_value_{}.zstd", entry_index).as_str(),
+            );
+
+            let serialized = serde_json::to_vec(&entry.value).map_err(|e| {
+                anyhow::anyhow!("Failed to serialize value at index {}: {}", entry_index, e)
+            })?;
+
+            let compressed = compress(serialized)?;
+
+            let mut file = std::fs::File::create(&offloaded_path).map_err(|e| {
+                anyhow::anyhow!(
+                "Failed to create or overwrite offloaded value file at {:?}: {}",
+                offloaded_path,
+                e
+            )
+            })?;
+
+            file.write_all(&compressed).map_err(|e| {
+                anyhow::anyhow!(
+                "Failed to write to offloaded value file at {:?}: {}",
+                offloaded_path,
+                e
+            )
+            })?;
+
+            entry.value = serde_json::Value::Null;
+        }
+        Ok(())
+    }
+
     fn store_to_file<T: Into<PathBuf>>(
-        &self,
+        &mut self,
         tv_file_path: T,
         file_format: TestVectorFileFormat,
     ) -> anyhow::Result<()> {
         let tv_file_path = tv_file_path.into();
+        self.save_offloaded_values(tv_file_path.clone())?;
         if let Some(parent) = tv_file_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
                 anyhow::anyhow!(
@@ -124,8 +206,8 @@ pub fn initialize_tv_case_from_file<T: Into<PathBuf>>(
             entries: Vec::new(),
         },
         TestMode::Check => {
-            TestVectorData::load_from_file(&tv_file_path, file_format).map_err(|_| {
-                anyhow!("Error loading test vector. You may need to switch to init mode")
+            TestVectorData::load_from_file(&tv_file_path, file_format).map_err(|e| {
+                anyhow!("Error loading test vector. You may need to switch to init mode. Internal error: {}", e)
             })?
         }
     };
@@ -168,8 +250,10 @@ pub fn process_next_entry<O>(
     name: Option<String>,
     observed_value: &O,
     code_location: Option<String>,
+    test_vec_set_code_location: Option<String>,
     serializer: &DynSerializer<O>,
     deserializer: Option<&DynDeserializer<O>>,
+    offload: bool,
 ) -> anyhow::Result<Option<O>> {
     let value = serializer(observed_value)?;
     let observed_entry = TestVectorEntry {
@@ -178,6 +262,8 @@ pub fn process_next_entry<O>(
         name,
         value,
         code_location,
+        test_vec_set_code_location,
+        offload
     };
 
     TestVecEnv::with_global(|tv_env| {
@@ -274,208 +360,36 @@ pub fn process_next_entry<O>(
     })
 }
 
-// #[macro_export]
-// macro_rules! process_tv_observation_const {
-//     (
-//         $observed_value:expr,
-//         $momento_type:ty,
-//         $name: expr,
-//         $description:expr,
-//         $code_location:expr,
-//     ) => {{
-//         #[allow(unused_braces)]
-//         {
-//             let value = &$observed_value;
-//             $crate::process_next_entry::<_, $momento_type>(
-//                 $crate::TestVectorEntryType::Const,
-//                 $description,
-//                 $name,
-//                 value,
-//                 Some($code_location),
-//             )
-//             .expect("Error processing observed test vector value")
-//             .expect("Unexpected error processing observed test vector const: no value was loaded")
-//         }
-//     }};
-// }
+fn is_false(v: &bool) -> bool {
+    !*v
+}
 
-// #[macro_export]
-// macro_rules! process_tv_observation_output {
-//     (
-//         $observed_value:expr,
-//         $momento_type:ty,
-//         $name: expr,
-//         $description:expr,
-//         $code_location:expr,
-//     ) => {{
-//         #[allow(unused_braces)]
-//         {
-//             let value = &$observed_value;
-//             $crate::process_next_entry::<_, $momento_type>(
-//                 $crate::TestVectorEntryType::Output,
-//                 $description,
-//                 $name,
-//                 value,
-//                 Some($code_location),
-//             )
-//             .expect("Error processing observed test vector value");
-//         }
-//     }};
-// }
+fn append_suffix_to_filename(path: &PathBuf, suffix: &str) -> PathBuf {
+    let mut path = path.clone();
+    if let Some(file_name) = path.file_name().map(|f| f.to_string_lossy()) {
+        let new_file_name = format!("{}{}", file_name, suffix);
+        path.set_file_name(new_file_name);
+    }
+    path
+}
 
-// // Define helper functions so that the compiler can infer the momento type.
-// pub fn helper_infer_const<T: crate::TestVectorMomento<T>>(
-//     observed: T,
-//     name: Option<String>,
-//     description: Option<String>,
-//     code_location: String,
-// ) -> T {
-//     crate::process_tv_observation_const!(observed, T, name, description, code_location,)
-// }
-// pub fn helper_infer_output<T: crate::TestVectorMomento<T>>(
-//     observed: T,
-//     name: Option<String>,
-//     description: Option<String>,
-//     code_location: String,
-// ) {
-//     crate::process_tv_observation_output!(observed, T, name, description, code_location,)
-// }
 
-// #[macro_export]
-// macro_rules! tv_const {
-//     (
-//         $observed_value:expr,
-//         $momento_type:ty,
-//         $name: expr,
-//         $description:expr
-//     ) => {
-//         $crate::process_tv_observation_const!(
-//             $observed_value,
-//             $momento_type,
-//             Some($name.into()),
-//             Some($description.into()),
-//             format!("{}:{}", file!(), line!()),
-//         )
-//     };
-//     // Version without description
-//     ($observed_value:expr, $momento_type:ty, $name:expr) => {
-//         $crate::process_tv_observation_const!(
-//             $observed_value,
-//             $momento_type,
-//             Some($name.into()),
-//             None,
-//             format!("{}:{}", file!(), line!()),
-//         )
-//     };
-//     // Version without name and description
-//     ($observed_value:expr, $momento_type:ty) => {
-//         $crate::process_tv_observation_const!(
-//             $observed_value,
-//             $momento_type,
-//             None,
-//             None,
-//             format!("{}:{}", file!(), line!()),
-//         )
-//     };
-//     // Version without momento_type
-//     // 3-argument version: we want to infer the type of the observed value.
-//     ($observed_value:expr, $name:expr, $description:expr) => {
-//         $crate::helper_infer_const(
-//             $observed_value,
-//             Some($name.into()),
-//             Some($description.into()),
-//             format!("{}:{}", file!(), line!()),
-//         )
-//     };
-//     // Version without description, and momento_type
-//     ($observed_value:expr, $name:expr) => {
-//         $crate::helper_infer_const(
-//             $observed_value,
-//             Some($name.into()),
-//             None,
-//             format!("{}:{}", file!(), line!()),
-//         )
-//     };
-//     // Version without name and description, and momento_type
-//     ($observed_value:expr) => {
-//         $crate::helper_infer_const(
-//             $observed_value,
-//             None,
-//             None,
-//             format!("{}:{}", file!(), line!()),
-//         )
-//     };
-// }
-//
-// #[macro_export]
-// macro_rules! tv_output {
-//     (
-//         $observed_value:expr,
-//         $momento_type:ty,
-//         $name: expr,
-//         $description:expr
-//     ) => {
-//         $crate::process_tv_observation_output!(
-//             $observed_value,
-//             $momento_type,
-//             Some($name.into()),
-//             Some($description.into()),
-//             format!("{}:{}", file!(), line!()),
-//         )
-//     };
-//     // Version without description
-//     ($observed_value:expr, $momento_type:ty, $name:expr) => {
-//         $crate::process_tv_observation_output!(
-//             $observed_value,
-//             $momento_type,
-//             Some($name.into()),
-//             None,
-//             format!("{}:{}", file!(), line!()),
-//         )
-//     };
-//     // Version without name and description
-//     ($observed_value:expr, $momento_type:ty) => {
-//         $crate::process_tv_observation_output!(
-//             $observed_value,
-//             $momento_type,
-//             None,
-//             None,
-//             format!("{}:{}", file!(), line!()),
-//         )
-//     };
-//     // Version without momento_type
-//     // 3-argument version: we want to infer the type of the observed value.
-//     ($observed_value:expr, $name:expr, $description:expr) => {
-//         $crate::helper_infer_output(
-//             $observed_value,
-//             Some($name.into()),
-//             Some($description.into()),
-//             format!("{}:{}", file!(), line!()),
-//         )
-//     };
-//     // Version without description, and momento_type
-//     ($observed_value:expr, $name:expr) => {
-//         $crate::helper_infer_output(
-//             $observed_value,
-//             Some($name.into()),
-//             None,
-//             format!("{}:{}", file!(), line!()),
-//         )
-//     };
-//     // Version without name and description, and momento_type
-//     ($observed_value:expr) => {
-//         $crate::helper_infer_output(
-//             $observed_value,
-//             None,
-//             None,
-//             format!("{}:{}", file!(), line!()),
-//         )
-//     };
-// }
-//
-// #[macro_export]
-// macro_rules! tv_if_enabled {
-//     ($($tt:tt)*) => {
-//         $($tt)*
-//     };
-// }
+fn decompress(data: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    let cursor = Cursor::new(data);
+    let decompressed = zstd::decode_all(cursor)?;
+    Ok(decompressed)
+}
+
+fn compress(data: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    let cursor = Cursor::new(data);
+    let compressed = zstd::encode_all(cursor, 15)?;
+    Ok(compressed)
+}
+
+fn is_null(value: &serde_json::Value) -> bool {
+    matches!(value, serde_json::Value::Null)
+}
+
+fn default_null() -> serde_json::Value {
+    serde_json::Value::Null
+}

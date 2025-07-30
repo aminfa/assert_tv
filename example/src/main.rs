@@ -31,12 +31,12 @@ mod tests {
     #[derive(TestVectorSet)]
     struct TestFields {
         a: TestValue<i32>,
-        #[test_vec(name="b", description="b is the second input")]
+        #[test_vec(name="b", description="b is the second input", offload = true)]
         b: TestValue<i32>,
         output: TestValue<i32>
     }
     
-    #[test_vec_case(mode="check")]
+    #[test_vec_case(mode="init")]
     fn test_vector_case_2() -> Result<(), String> {
         let setup_fields: TestFields = TestVectorActive::initialize_values();
         let a = TestVectorActive::expose_value(&setup_fields.a, 4);
