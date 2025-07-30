@@ -98,11 +98,6 @@ impl TestVectorData {
             }
             let offloaded_path =  append_suffix_to_filename(&tv_file_path,
                                                             format!("_offloaded_value_{}.zstd", entry_index).as_str());
-            if !offloaded_path.exists() {
-                bail!("Cannot load offloaded value (index={}), offloaded file does not exist: {}",
-                    entry_index, offloaded_path.to_str().unwrap());
-            }
-
             let mut offloaded_value_file = std::fs::File::open(offloaded_path.clone()).map_err(|e| {
                 anyhow::anyhow!(
                 "Failed to open offloaded value file ({:?}): {}",

@@ -21,7 +21,7 @@ log = { version = "0.4", optional = false }
 anyhow = "1.x"
 serde_yaml = { version = "0.9", optional = false }
 toml = { version = "0.x", optional = false }
-assert_tv_macros = { path = "../assert_tv_macros", version = "0.6.2" }
+assert_tv_macros = { path = "../assert_tv_macros", version = "0.6.3" }
 zstd = "0.13"
 base64 = "0.x"
 
