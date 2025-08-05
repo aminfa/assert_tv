@@ -1,12 +1,12 @@
 mod derive;
 
 extern crate proc_macro;
-use proc_macro::TokenStream;
+use std::borrow::Borrow;
+
+use proc_macro::{Ident, TokenStream};
 use quote::quote;
-use syn::{parse_macro_input, ItemFn, Expr, Lit, Meta, Token, Error, DeriveInput};
 use syn::punctuated::Punctuated;
-
-
+use syn::{parse_macro_input, DeriveInput, Error, Expr, ExprLit, ItemFn, Lit, Meta, Token};
 
 /// Derive macro for [`assert_tv::TestVectorSet`].
 ///
@@ -88,12 +88,11 @@ pub fn derive_test_vector_set(input: TokenStream) -> TokenStream {
     }
 }
 
-
 /// An attribute macro for simplifying the creation of test functions that utilize test vectors.
 ///
 /// This macro allows you to write data-driven tests using external test vectors stored in YAML or JSON files.
 /// It provides flexibility by supporting different modes of operation: initializing, checking, and recording test cases.
-/// 
+///
 /// # Usage
 ///
 /// The `test_vec_case` macro is applied as an attribute to test functions. Here's a basic example:
@@ -129,7 +128,7 @@ pub fn derive_test_vector_set(input: TokenStream) -> TokenStream {
 ///      - `"check"`
 ///    - Default: If no value is specified, the `TEST_MODE` env-variable is queried for a fall-back. Else `"check"` is used as the default.
 ///    - Example: `#[test_vec(mode = "init")]`
-/// 
+///
 /// # Notes
 ///
 /// - The generated default file path for test vectors is `.test_vectors/<function_name>.<format>`.
@@ -150,74 +149,60 @@ pub fn test_vec_case(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Process attribute arguments
     for meta in args {
-        match meta {
-            Meta::NameValue(nv) => {
-                let ident = nv.path.get_ident().unwrap_or_else(|| {
-                    panic!("Invalid attribute argument");
-                });
-
-                if ident == "file" {
-                    if let Expr:: Lit(lit_str)  = nv.value {
-                        let Lit::Str(v) = lit_str.lit else {
-                            return Error::new_spanned(lit_str, "expected string literal")
-                                .to_compile_error()
-                                .into();
-                        };
-                        file_path = Some(v.value());
-                    } else {
-                        return Error::new_spanned(nv.value, "expected string literal")
-                            .to_compile_error()
-                            .into();
-                    }
-                } else if ident == "format" {
-                    if let Expr:: Lit(lit_str)  = nv.value {
-                        let Lit::Str(v) = lit_str.clone().lit else {
-                            return Error::new_spanned(lit_str.clone(), "expected string literal")
-                                .to_compile_error()
-                                .into();
-                        };
-                        (file_format_ending, file_format_quoted) = match v.value().as_str() {
-                            "yaml" | "yml" => ("yaml",
-                                               quote! {assert_tv::TestVectorFileFormat::Yaml}),
-                            "json" => ("json",
-                                       quote! {assert_tv::TestVectorFileFormat::Json}),
-                            "toml" => ("toml",
-                                       quote! {assert_tv::TestVectorFileFormat::Toml}),
-                            _ => {
-                                return Error::new_spanned(lit_str, "invalid format, expected yaml/yml or json")
-                                    .to_compile_error()
-                                    .into();
-                            }
-                        };
-                    } else {
-                        return Error::new_spanned(nv.value, "expected string literal")
-                            .to_compile_error()
-                            .into();
-                    }
-                }
-                else if ident == "mode" {
-                    if let Expr:: Lit(lit_str)  = nv.value {
-                        let Lit::Str(v) = lit_str.clone().lit else {
-                            return Error::new_spanned(lit_str.clone(), "expected string literal")
-                                .to_compile_error()
-                                .into();
-                        };
-                        test_mode = match v.value().as_str() {
-                            "init" => quote! {assert_tv::TestMode::Init},
-                            "check" => quote! {assert_tv::TestMode::Check},
-                            _ => {
-                                return Error::new_spanned(lit_str, "invalid format, expected init, check")
-                                    .to_compile_error()
-                                    .into();
-                            }
-                        };
-                    } else {
-                        return Error::new_spanned(nv.value, "expected string literal")
-                            .to_compile_error()
-                            .into();
-                    }
-                }
+        // We expect that the meta argument is a named value with a proper name; short-circuit otherwise!
+        let nv = match meta.clone() {
+            Meta::NameValue(nv) => nv,
+            _ => {
+                return Error::new_spanned(meta, "unsupported attribute format")
+                    .to_compile_error()
+                    .into()
             }
+        };
+
+        // We expect that the named value has a proper ident; short-circuit otherwise
+        let ident = nv.path.get_ident().unwrap_or_else(|| {
+            panic!("Invalid attribute argument");
+        });
+
+        match (ident.to_string().borrow(), &nv.value) {
+            ("file", Expr::Lit(ExprLit { lit: Lit::Str(v), .. })) => {
+                file_path = Some(v.value());
+            },
+
+            ("format", Expr::Lit(lit_str @ ExprLit { lit: Lit::Str(val), .. })) => { 
+                (file_format_ending, file_format_quoted) = match val.value().as_str() {
+                    "yaml" | "yml" => ("yaml", quote! {assert_tv::TestVectorFileFormat::Yaml}),
+                    "json" => ("json", quote! {assert_tv::TestVectorFileFormat::Json}),
+                    "toml" => ("toml", quote! {assert_tv::TestVectorFileFormat::Toml}),
+                    _ => {
+                        return Error::new_spanned(
+                            lit_str,
+                            "invalid format, expected yaml/yml or json",
+                        )
+                        .to_compile_error()
+                        .into();
+                    }
+                };
+            },
+
+            ("mode", Expr::Lit(lit_str @ ExprLit { lit: Lit::Str(val), .. })) => { 
+                test_mode = match val.value().as_str() {
+                    "init" => quote! {assert_tv::TestMode::Init},
+                    "check" => quote! {assert_tv::TestMode::Check},
+                    _ => {
+                        return Error::new_spanned(lit_str, "invalid format, expected init, check")
+                            .to_compile_error()
+                            .into();
+                    }
+                };
+            }
+
+            ("file" | "format" | "mode", nv_value) => {
+                return Error::new_spanned(nv_value, "expected string literal")
+                    .to_compile_error()
+                    .into();
+            },
+
             _ => return Error::new_spanned(meta, "unsupported attribute format")
                 .to_compile_error()
                 .into(),
@@ -231,8 +216,6 @@ pub fn test_vec_case(attr: TokenStream, item: TokenStream) -> TokenStream {
             default_file
         }
     };
-
-
 
     // let file_path_quoted = quote! {file_path};
     // let file_format_quoted = quote! {file_format};
@@ -250,3 +233,4 @@ pub fn test_vec_case(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
