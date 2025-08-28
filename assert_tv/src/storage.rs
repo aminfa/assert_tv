@@ -9,6 +9,10 @@ pub(crate) mod storage_global {
     // because it is a global env that all threads write to, we need a lock
     static GLOBAL_ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    /// Drop‑guard that keeps the global test‑vector environment active.
+    ///
+    /// Returned from `initialize_tv_case_from_file`. Dropping the guard clears the
+    /// environment and releases the global lock so only one session is active at a time.
     pub struct TlsEnvGuard {
         // Prevents Send implementation to ensure the guard is dropped in the same thread.
         _marker: PhantomData<*const ()>,
@@ -67,6 +71,10 @@ pub(crate) mod tls_storage {
         static TEST_VEC_ENV: RefCell<Option<TestVecEnv>> = const { RefCell::new(None) };
     }
 
+    /// Drop‑guard that keeps the thread‑local test‑vector environment active.
+    ///
+    /// Returned from `initialize_tv_case_from_file`. Dropping the guard clears the
+    /// TLS environment. Only one session can be active per thread.
     pub struct TlsEnvGuard {
         // Prevents Send implementation to ensure the guard is dropped in the same thread.
         _marker: PhantomData<*const ()>,

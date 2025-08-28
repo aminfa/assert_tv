@@ -212,6 +212,7 @@ pub fn parse_test_vec_attribute(
     compress: &mut Option<bool>,
     offload: &mut Option<bool>,
 ) -> syn::Result<()> {
+    let _ = compress;
     attr.parse_nested_meta(|meta| {
         // ---- helper -------------------------------------------------------
         let get_lit_str = || -> syn::Result<LitStr> {
@@ -279,4 +280,3 @@ pub fn parse_test_vec_attribute(
         ))
     })
 }
-

@@ -1,19 +1,16 @@
 use crate::{DynDeserializer, DynSerializer, TestMode, TestVectorFileFormat, TlsEnvGuard};
 use anyhow::{anyhow, bail, Context};
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read, Write};
-use std::path::{Path, PathBuf};
-use log::warn;
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct TestVectorEntry {
     entry_type: TestVectorEntryType,
     description: Option<String>,
     name: Option<String>,
-    #[serde(
-        default = "default_null",
-        skip_serializing_if = "is_null"
-    )]
+    #[serde(default = "default_null", skip_serializing_if = "is_null")]
     value: serde_json::Value,
     code_location: Option<String>,
     test_vec_set_code_location: Option<String>,
@@ -23,8 +20,11 @@ pub struct TestVectorEntry {
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Eq, PartialEq, Clone)]
+/// Kind of entry stored in a test vector file.
 pub enum TestVectorEntryType {
+    /// Constant input captured and, in `Check` mode, injected back.
     Const,
+    /// Output that is validated against the stored value in `Check` mode.
     Output,
 }
 
@@ -33,6 +33,10 @@ pub struct TestVectorData {
     pub entries: Vec<TestVectorEntry>,
 }
 
+/// Internal environment holding the currently loaded and recorded test vectors.
+///
+/// Exposed to allow advanced/manual control; typical tests rely on the
+/// `#[test_vec_case]` macro or the high‑level `initialize_tv_case_from_file`/`finalize_tv_case` pair.
 pub struct TestVecEnv {
     pub(crate) tv_file_path: PathBuf,
     file_format: TestVectorFileFormat,
@@ -88,7 +92,7 @@ impl TestVectorData {
         Ok(tv_data)
     }
 
-    fn load_offloaded_values(&mut self, tv_file_path: PathBuf,) -> anyhow::Result<()> {
+    fn load_offloaded_values(&mut self, tv_file_path: PathBuf) -> anyhow::Result<()> {
         for (entry_index, entry) in self.entries.iter_mut().enumerate() {
             if !(entry.offload) {
                 continue;
@@ -96,21 +100,28 @@ impl TestVectorData {
             if !entry.value.is_null() {
                 warn!("Test value entry is set to offload but still has a value already loaded")
             }
-            let offloaded_path =  append_suffix_to_filename(&tv_file_path,
-                                                            format!("_offloaded_value_{}.zstd", entry_index).as_str());
-            let mut offloaded_value_file = std::fs::File::open(offloaded_path.clone()).map_err(|e| {
-                anyhow::anyhow!(
-                "Failed to open offloaded value file ({:?}): {}",
-                offloaded_path,
-                e
-            ) })?;
+            let offloaded_path = append_suffix_to_filename(
+                &tv_file_path,
+                format!("_offloaded_value_{}.zstd", entry_index).as_str(),
+            );
+            let mut offloaded_value_file =
+                std::fs::File::open(offloaded_path.clone()).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to open offloaded value file ({:?}): {}",
+                        offloaded_path,
+                        e
+                    )
+                })?;
             let mut offloaded_value_bytes = Vec::new();
-            offloaded_value_file.read_to_end(&mut offloaded_value_bytes)
+            offloaded_value_file
+                .read_to_end(&mut offloaded_value_bytes)
                 .map_err(|e| anyhow::anyhow!("Failed to read offloaded value file: {}", e))?;
             drop(offloaded_value_file);
             let offloaded_value_bytes = decompress(offloaded_value_bytes)?;
-            let offloaded_value: serde_json::value::Value = serde_json::from_slice(&offloaded_value_bytes)
-                .map_err(|e| anyhow::anyhow!("Failed to parse offloaded value as a json value: {}", e))?;
+            let offloaded_value: serde_json::value::Value =
+                serde_json::from_slice(&offloaded_value_bytes).map_err(|e| {
+                    anyhow::anyhow!("Failed to parse offloaded value as a json value: {}", e)
+                })?;
             entry.value = offloaded_value;
         }
         Ok(())
@@ -135,18 +146,18 @@ impl TestVectorData {
 
             let mut file = std::fs::File::create(&offloaded_path).map_err(|e| {
                 anyhow::anyhow!(
-                "Failed to create or overwrite offloaded value file at {:?}: {}",
-                offloaded_path,
-                e
-            )
+                    "Failed to create or overwrite offloaded value file at {:?}: {}",
+                    offloaded_path,
+                    e
+                )
             })?;
 
             file.write_all(&compressed).map_err(|e| {
                 anyhow::anyhow!(
-                "Failed to write to offloaded value file at {:?}: {}",
-                offloaded_path,
-                e
-            )
+                    "Failed to write to offloaded value file at {:?}: {}",
+                    offloaded_path,
+                    e
+                )
             })?;
 
             entry.value = serde_json::Value::Null;
@@ -190,6 +201,14 @@ impl TestVectorData {
     }
 }
 
+/// Create a test‑vector session from the given file and mode.
+///
+/// - In `Init`, starts with an empty in‑memory vector and writes it on finalize
+///   if missing or changed.
+/// - In `Check`, loads and uses the existing file for validation.
+///
+/// Returns a guard that must be kept alive for the duration of the session; dropping it
+/// clears the global/thread‑local environment.
 pub fn initialize_tv_case_from_file<T: Into<PathBuf>>(
     tv_file_path: T,
     file_format: TestVectorFileFormat,
@@ -218,6 +237,10 @@ pub fn initialize_tv_case_from_file<T: Into<PathBuf>>(
     TestVecEnv::initialize_with(tv_env)
 }
 
+/// Finalize the current test‑vector session.
+///
+/// In `Init` mode, writes the recorded entries to disk (overwriting the file)
+/// when content changed or the file does not exist. In `Check` mode, this is a no‑op.
 pub fn finalize_tv_case() -> anyhow::Result<()> {
     TestVecEnv::with_global(|tv_env| {
         match tv_env.test_mode {
@@ -239,6 +262,9 @@ pub fn finalize_tv_case() -> anyhow::Result<()> {
     })
 }
 
+/// Low‑level: process the next observed entry.
+///
+/// This is used internally by `TestVector::{expose_value, expose_mut_value, check_value}`.
 pub fn process_next_entry<O>(
     entry_type: TestVectorEntryType,
     description: Option<String>,
@@ -258,7 +284,7 @@ pub fn process_next_entry<O>(
         value,
         code_location,
         test_vec_set_code_location,
-        offload
+        offload,
     };
 
     TestVecEnv::with_global(|tv_env| {
@@ -367,7 +393,6 @@ fn append_suffix_to_filename(path: &PathBuf, suffix: &str) -> PathBuf {
     }
     path
 }
-
 
 fn decompress(data: Vec<u8>) -> anyhow::Result<Vec<u8>> {
     let cursor = Cursor::new(data);

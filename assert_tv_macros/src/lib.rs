@@ -6,76 +6,32 @@ use quote::quote;
 use syn::punctuated::Punctuated;
 use syn::{parse_macro_input, DeriveInput, Error, Expr, ItemFn, Lit, Meta, Token};
 
-/// Derive macro for [`assert_tv::TestVectorSet`].
+/// Derive `assert_tv::TestVectorSet` for a struct of `TestValue<…>` fields.
 ///
-/// This macro generates an implementation of
-/// ```text
-/// impl assert_tv::TestVectorSet for YourStruct { … }
-/// ```
-/// whose `start::<TV>()` constructor populates each field with an
-/// [`assert_tv::TestValue<T>`] pre‑initialised for the current source‑code
-/// location.
+/// Requirements:
+/// - Struct with named fields (no tuple/unit structs).
+/// - Every field is of type `assert_tv::TestValue<…>`.
 ///
-/// ---
-/// # Requirements
+/// Per-field attributes via `#[test_vec(...)]`:
+/// - `name = "…"`: human-readable field name.
+/// - `description = "…"`: longer description for reports.
+/// - `serialize_with = "path::to::fn"`: `fn(&T) -> anyhow::Result<serde_json::Value>`.
+/// - `deserialize_with = "path::to::fn"`: `fn(&serde_json::Value) -> anyhow::Result<T>`.
+/// - `offload = true`: store value in a compressed sidecar file.
 ///
-/// * **All struct fields must be of type** `TestValue<…>`.
-/// * The struct must be **non‑tuple, non‑unit, with named fields.**
-///
-/// ---
-/// # Field attributes
-///
-/// Each field may carry zero or more `#[test_vec(...)]` helpers:
-///
-/// | Key&nbsp; | Type&nbsp; | Meaning | Default if omitted |
-/// |----------|-----------|---------|---------------------|
-/// | `name`             | `&'static str` | Human‑readable display name. | `None` |
-/// | `description`      | `&'static str` | Longer explanation for docs / reports. | `None` |
-/// | `serialize_with`   | *path* to `fn(&T) -> anyhow::Result<serde_json::Value>` | Custom serializer | `serde_json::to_value`  |
-/// | `deserialize_with` | *path* to `fn(&serde_json::Value) -> anyhow::Result<T>` | Custom deserializer | `serde_json::from_value` |
-///
-/// Multiple `#[test_vec]` attributes may be stacked on the same field:
-///
-/// ```rust,ignore
-/// #[test_vec(name = "counter")]
-/// #[test_vec(description = "u64 monotonically increasing")]
-/// #[test_vec(serialize_with = "my_serialize")]
-/// count: TestValue<u64>,
-/// ```
-///
-/// Duplicate keys on the same field are rejected with a clear error
-/// (`duplicate "name" key`, etc.).
-///
-/// ---
-/// # Example
-///
+/// Example:
 /// ```rust,ignore
 /// use assert_tv::{TestVectorSet, TestValue};
 ///
 /// #[derive(TestVectorSet)]
-/// struct SomeTestFields {
-///     #[test_vec(name = "a", description = "a is a u64")]
-///     #[test_vec(serialize_with = "custom_serialize_fn")]
-///     #[test_vec(deserialize_with = "custom_deserialize_fn")]
-///     a: TestValue<u64>,
+/// struct Fields {
+///     #[test_vec(name = "rand", description = "random input")]
+///     rand: TestValue<u64>,
 ///
-///     // No attributes: falls back to defaults.
-///     b: TestValue<String>,
-/// }
-///
-/// fn custom_serialize_fn(v: &u64) -> anyhow::Result<serde_json::Value> {
-///     Ok(serde_json::json!(v))
-/// }
-///
-/// fn custom_deserialize_fn(v: &serde_json::Value) -> anyhow::Result<u64> {
-///     Ok(v.as_u64().unwrap_or_default())
+///     #[test_vec(name = "out", offload = true)]
+///     out: TestValue<Vec<u8>>,
 /// }
 /// ```
-///
-/// Running `cargo doc --open` after adding this comment will render the
-/// table, example, and key descriptions in a readable, searchable format.
-///
-/// ---
 #[proc_macro_derive(TestVectorSet, attributes(test_vec))]
 pub fn derive_test_vector_set(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -86,52 +42,30 @@ pub fn derive_test_vector_set(input: TokenStream) -> TokenStream {
     }
 }
 
-/// An attribute macro for simplifying the creation of test functions that utilize test vectors.
+/// Attribute macro for tests that use assert_tv test vectors.
 ///
-/// This macro allows you to write data-driven tests using external test vectors stored in YAML or JSON files.
-/// It provides flexibility by supporting different modes of operation: initializing, checking, and recording test cases.
+/// Wraps a `#[test]` function with automatic initialization/finalization of a
+/// test‑vector session. Controls the file path, format, and mode.
 ///
-/// # Usage
+/// Arguments:
+/// - `file = "path/to/file.ext"` (optional): defaults to `.test_vectors/<fn_name>.<format>`.
+/// - `format = "json" | "yaml" | "toml"` (optional): defaults to `"json"`.
+/// - `mode = "init" | "check"` (optional): defaults to `TEST_MODE` env var, else `"check"`.
 ///
-/// The `test_vec_case` macro is applied as an attribute to test functions. Here's a basic example:
-///
-/// ```rust
+/// Example:
+/// ```rust,ignore
 /// use assert_tv_macros::test_vec_case;
+///
 /// #[test_vec_case]
-/// fn my_test() {
-///     // Test code here
+/// fn my_default_case() {
+///     // uses .test_vectors/my_default_case.json
+/// }
+///
+/// #[test_vec_case(file = "tests/vecs/case.yaml", format = "yaml", mode = "init")]
+/// fn my_yaml_init_case() {
+///     // initializes YAML vectors at the given path
 /// }
 /// ```
-///
-/// ## Arguments
-///
-/// The `test_vec` macro accepts the following arguments:
-///
-/// 1. **`file`**: Specifies the path to the test vector file.
-///    - Format: `"path/to/file.{yaml|json}"`
-///    - Example: `#[test_vec(file = "tests/vecs/my_test.yaml")]`
-///    - Default: None (uses a default based on function name and format)
-///
-/// 2. **`format`**: Determines the format of the test vector file.
-///    - Possible values:
-///      - `"yaml"` or `"yml"`
-///      - `"json"`
-///      - `"toml"`
-///    - Default: `"yaml"`
-///    - Example: `#[test_vec(format = "json")]`
-///
-/// 3. **`mode`**: Specifies the test mode.
-///    - Possible values:
-///      - `"init"`
-///      - `"check"`
-///    - Default: If no value is specified, the `TEST_MODE` env-variable is queried for a fall-back. Else `"check"` is used as the default.
-///    - Example: `#[test_vec(mode = "init")]`
-///
-/// # Notes
-///
-/// - The generated default file path for test vectors is `.test_vectors/<function_name>.<format>`.
-/// - Test functions wrapped with this macro are marked as `#[ignore]` by default. To include them in test runs, use the `--ignored` flag.
-/// - The macro automatically initializes and cleans up test vector resources, ensuring proper setup and teardown.
 #[proc_macro_attribute]
 pub fn test_vec_case(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr with Punctuated::<Meta, Token![,]>::parse_terminated);
