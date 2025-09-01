@@ -1,10 +1,12 @@
 mod derive;
 
 extern crate proc_macro;
+use std::borrow::Borrow;
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::punctuated::Punctuated;
-use syn::{parse_macro_input, DeriveInput, Error, Expr, ItemFn, Lit, Meta, Token};
+use syn::{parse_macro_input, DeriveInput, Error, Expr, ExprLit, ItemFn, Lit, Meta, Token};
 
 /// Derive `assert_tv::TestVectorSet` for a struct of `TestValue<…>` fields.
 ///
@@ -73,6 +75,7 @@ pub fn test_vec_case(attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_result = &input.sig.output;
     let fn_name = &input.sig.ident;
     let fn_block = &input.block;
+    let attrs = &input.attrs;
 
     let mut file_path: Option<String> = None;
     let mut file_format_ending: &'static str = "json";
@@ -81,78 +84,79 @@ pub fn test_vec_case(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Process attribute arguments
     for meta in args {
-        match meta {
-            Meta::NameValue(nv) => {
-                let ident = nv.path.get_ident().unwrap_or_else(|| {
-                    panic!("Invalid attribute argument");
-                });
-
-                if ident == "file" {
-                    if let Expr::Lit(lit_str) = nv.value {
-                        let Lit::Str(v) = lit_str.lit else {
-                            return Error::new_spanned(lit_str, "expected string literal")
-                                .to_compile_error()
-                                .into();
-                        };
-                        file_path = Some(v.value());
-                    } else {
-                        return Error::new_spanned(nv.value, "expected string literal")
-                            .to_compile_error()
-                            .into();
-                    }
-                } else if ident == "format" {
-                    if let Expr::Lit(lit_str) = nv.value {
-                        let Lit::Str(v) = lit_str.clone().lit else {
-                            return Error::new_spanned(lit_str.clone(), "expected string literal")
-                                .to_compile_error()
-                                .into();
-                        };
-                        (file_format_ending, file_format_quoted) = match v.value().as_str() {
-                            "yaml" | "yml" => {
-                                ("yaml", quote! {assert_tv::TestVectorFileFormat::Yaml})
-                            }
-                            "json" => ("json", quote! {assert_tv::TestVectorFileFormat::Json}),
-                            "toml" => ("toml", quote! {assert_tv::TestVectorFileFormat::Toml}),
-                            _ => {
-                                return Error::new_spanned(
-                                    lit_str,
-                                    "invalid format, expected yaml/yml or json",
-                                )
-                                .to_compile_error()
-                                .into();
-                            }
-                        };
-                    } else {
-                        return Error::new_spanned(nv.value, "expected string literal")
-                            .to_compile_error()
-                            .into();
-                    }
-                } else if ident == "mode" {
-                    if let Expr::Lit(lit_str) = nv.value {
-                        let Lit::Str(v) = lit_str.clone().lit else {
-                            return Error::new_spanned(lit_str.clone(), "expected string literal")
-                                .to_compile_error()
-                                .into();
-                        };
-                        test_mode = match v.value().as_str() {
-                            "init" => quote! {assert_tv::TestMode::Init},
-                            "check" => quote! {assert_tv::TestMode::Check},
-                            _ => {
-                                return Error::new_spanned(
-                                    lit_str,
-                                    "invalid format, expected init, check",
-                                )
-                                .to_compile_error()
-                                .into();
-                            }
-                        };
-                    } else {
-                        return Error::new_spanned(nv.value, "expected string literal")
-                            .to_compile_error()
-                            .into();
-                    }
-                }
+        // We expect that the meta argument is a named value with a proper name; short-circuit otherwise!
+        let nv = match meta.clone() {
+            Meta::NameValue(nv) => nv,
+            _ => {
+                return Error::new_spanned(meta, "unsupported attribute format")
+                    .to_compile_error()
+                    .into()
             }
+        };
+
+        // We expect that the named value has a proper ident; short-circuit otherwise
+        let ident = nv.path.get_ident().unwrap_or_else(|| {
+            panic!("Invalid attribute argument");
+        });
+
+        match (ident.to_string().borrow(), &nv.value) {
+            (
+                "file",
+                Expr::Lit(ExprLit {
+                    lit: Lit::Str(v), ..
+                }),
+            ) => {
+                file_path = Some(v.value());
+            }
+
+            (
+                "format",
+                Expr::Lit(
+                    lit_str @ ExprLit {
+                        lit: Lit::Str(val), ..
+                    },
+                ),
+            ) => {
+                (file_format_ending, file_format_quoted) = match val.value().as_str() {
+                    "yaml" | "yml" => ("yaml", quote! {assert_tv::TestVectorFileFormat::Yaml}),
+                    "json" => ("json", quote! {assert_tv::TestVectorFileFormat::Json}),
+                    "toml" => ("toml", quote! {assert_tv::TestVectorFileFormat::Toml}),
+                    _ => {
+                        return Error::new_spanned(
+                            lit_str,
+                            "invalid format, expected yaml/yml or json",
+                        )
+                        .to_compile_error()
+                        .into();
+                    }
+                };
+            }
+
+            (
+                "mode",
+                Expr::Lit(
+                    lit_str @ ExprLit {
+                        lit: Lit::Str(val), ..
+                    },
+                ),
+            ) => {
+                test_mode = match val.value().as_str() {
+                    "init" => quote! {assert_tv::TestMode::Init},
+                    "check" => quote! {assert_tv::TestMode::Check},
+                    _ => {
+                        return Error::new_spanned(lit_str, "invalid format, expected init, check")
+                            .to_compile_error()
+                            .into();
+                    }
+                };
+            }
+
+            ("file" | "format" | "mode", nv_value) => {
+                return Error::new_spanned(nv_value, "expected string literal")
+                    .to_compile_error()
+                    .into();
+            }
+
             _ => {
                 return Error::new_spanned(meta, "unsupported attribute format")
                     .to_compile_error()
@@ -172,14 +176,18 @@ pub fn test_vec_case(attr: TokenStream, item: TokenStream) -> TokenStream {
     // let file_path_quoted = quote! {file_path};
     // let file_format_quoted = quote! {file_format};
     let expanded = quote! {
+        #(#attrs)*
         #[test]
         fn #fn_name() #fn_result {
             let _guard = assert_tv::initialize_tv_case_from_file(#file_path, #file_format_quoted, #test_mode)
                 .expect("Error initializing test vector case");
             let result = #fn_block;
-            assert_tv::finalize_tv_case().expect("Error finalizing test vector case");
-            drop(_guard);
-            result
+            #[allow(unreachable_code)]
+            {
+                assert_tv::finalize_tv_case().expect("Error finalizing test vector case");
+                drop(_guard);
+                result
+            }
         }
     };
 
